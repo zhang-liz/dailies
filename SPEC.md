@@ -1,0 +1,43 @@
+# take.json
+
+One sidecar file per generated clip, named `<clip>.take.json`, next to the clip. It is the contract between generation tooling (which records how a take was made) and review tooling (which records what is wrong with it). Any tool can read or write its own block and must preserve the blocks of others.
+
+## Shape
+
+```json
+{
+  "take_id": "sha256:… content hash of the clip file",
+  "shot": "shot-07",
+  "parent": "take_id this was rerun or derived from, or null",
+  "created": "2026-08-04T21:14:00Z",
+  "output": { "file": "shot-07/take-031.mp4", "fps": 24, "frames": 121, "width": 1280, "height": 720 },
+  "recipe": {
+    "workflow": { "…": "resolved generation graph, verbatim" },
+    "models": [ { "file": "wan2.2_t2v_14b_fp8.safetensors", "sha256": "…", "source_hint": "huggingface:Wan-AI/Wan2.2-T2V" } ],
+    "loras": [ { "file": "myrna_v3.safetensors", "sha256": "…", "strength": 0.85 } ],
+    "conditioning": [ { "role": "reference_image", "sha256": "…" } ],
+    "seeds": { "3": 424242 },
+    "prompt_text": "flattened positive prompt for cheap access",
+    "env": { "comfyui": "0.9.4", "torch": "2.9.1+cu126", "gpu": "RTX 4090" }
+  },
+  "review": {
+    "mechanical": { "black_frames": [], "freeze": [], "scene_cuts": [], "flicker_score": 0.12, "candidate_frames": [0.0, 3.2], "kill_reasons": [] },
+    "vlm": { "engine": "qwen3-vl", "defects": [ { "t": 3.2, "rule": "anatomy.hands", "severity": 3, "note": "left hand 6 fingers during cup grab" } ], "skipped": [], "unparsed": [] },
+    "verdict": "keep | kill | review",
+    "rank_in_shot": 2
+  }
+}
+```
+
+## Rules
+
+- **Hashes carry an algorithm prefix** (`sha256:`, `blake3:`) so producers and consumers never have to agree on an installed library.
+- **`take_id` is the content hash of the output file.** Rename the file and the identity survives; regenerate it and the identity changes. Review results cache on it.
+- **`recipe` belongs to generation tooling, `review` to review tooling.** Either block may be null; each tool works alone. A reviewer on a bare folder of clips writes sidecars with `recipe: null`; a recorder without a reviewer leaves `review: null`.
+- **Unknown keys are preserved, never stripped.** Tools rewrite a sidecar by reading it, replacing their own block, and writing the rest back untouched.
+- **`parent` links a rerun to its source take.** Lineage is the chain of parent pointers; no separate database is required.
+- **Verdicts are honest.** `kill` requires stated reasons. Mechanical checks alone never produce `keep`; that requires eyes or a screening model.
+
+## Status
+
+Draft, versioned by this repository's history. The reference producer and consumer of the `review` block is [dailies](README.md).
