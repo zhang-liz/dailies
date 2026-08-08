@@ -101,6 +101,13 @@ def cmd_review(args):
     return 0
 
 
+def cmd_report(args):
+    from . import report
+    out = report.build(args.dir, args.output)
+    print(json.dumps({"report": out}) if args.json else out)
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(
         prog="dailies",
@@ -116,6 +123,13 @@ def main(argv=None):
                     help="re-review even when the cached take_id matches")
     rv.add_argument("--json", action="store_true")
     rv.set_defaults(func=cmd_review)
+
+    rp = sub.add_parser("report", help="write the static HTML morning report")
+    rp.add_argument("dir", nargs="?", default=".",
+                    help="directory to scan for take.json sidecars")
+    rp.add_argument("-o", "--output", default="dailies-report.html")
+    rp.add_argument("--json", action="store_true")
+    rp.set_defaults(func=cmd_report)
 
     args = p.parse_args(argv)
     try:
