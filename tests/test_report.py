@@ -46,6 +46,23 @@ class ReportTests(unittest.TestCase):
         self.assertIn('src="shot-01/good.mp4"', page)
         self.assertNotIn("—", page)
 
+    def test_report_marks_vlm_defects(self):
+        from dailies import take
+        clip = os.path.join(self.dir, "shot-01", "good.mp4")
+        t = take.load(clip)
+        t["review"]["vlm"] = {"engine": "stub", "defects": [
+            {"t": 0.5, "severity": 4, "rule": "anatomy.hands",
+             "note": "six fingers"}], "skipped": [], "unparsed": []}
+        take.save(clip, t)
+        out = os.path.join(self.dir, "report.html")
+        main(["report", self.dir, "-o", out])
+        page = open(out).read()
+        self.assertIn('class="defect"', page)
+        self.assertIn("anatomy.hands (4): six fingers", page)
+        self.assertIn("1 defects", page)
+        # survivor with defects gets a details block labeled defects
+        self.assertIn("<summary>defects</summary>", page)
+
 
 if __name__ == "__main__":
     unittest.main()

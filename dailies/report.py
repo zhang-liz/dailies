@@ -41,13 +41,15 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em;
 .span.freeze { background: #4f7dd8; }
 .cut { position: absolute; top: -2px; width: 2px; height: 12px;
   background: #d8a24f; }
+.defect { position: absolute; top: -3px; width: 6px; height: 6px;
+  border-radius: 50%; background: #d8564f; transform: translateX(-3px); }
 details { margin-top: 8px; }
 summary { cursor: pointer; color: #8b8b93; font-size: 12px; }
 details pre { white-space: pre-wrap; font-size: 12px; color: #d87f7f;
   margin-top: 6px; }
 .legend { color: #8b8b93; font-size: 12px; margin-top: 24px; }
-.legend i { position: static; display: inline-block; width: 10px;
-  height: 10px; border-radius: 2px; margin: 0 4px 0 12px;
+.legend i { position: static; transform: none; display: inline-block;
+  width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 12px;
   vertical-align: -1px; }
 """
 
@@ -84,7 +86,7 @@ def _find_takes(root):
     return takes
 
 
-def _timeline(mech, duration):
+def _timeline(mech, duration, defects=()):
     if not duration:
         return ""
     spans = []
@@ -100,6 +102,11 @@ def _timeline(mech, duration):
     for t in mech.get("scene_cuts", []):
         spans.append('<i class="cut" style="left:%.1f%%"></i>'
                      % (100 * t / duration))
+    for d in defects:
+        spans.append('<i class="defect" style="left:%.1f%%" title="%s"></i>'
+                     % (100 * min(d["t"], duration) / duration,
+                        html.escape("%s (%d): %s" % (
+                            d["rule"], d["severity"], d["note"]))))
     return '<div class="timeline">%s</div>' % "".join(spans)
 
 
@@ -119,11 +126,18 @@ def _take_card(t, report_dir):
         stats.append("flicker %.3f" % mech["flicker_score"])
     if mech.get("scene_cuts"):
         stats.append("%d cuts" % len(mech["scene_cuts"]))
+    defects = (r.get("vlm") or {}).get("defects") or []
+    if defects:
+        stats.append("%d defects" % len(defects))
     reasons = mech.get("kill_reasons") or []
+    lines = list(reasons)
+    lines.extend("%ss %s (%d): %s" % (d["t"], d["rule"], d["severity"],
+                                      d["note"]) for d in defects)
     details = ""
-    if reasons:
-        details = ("<details><summary>why killed</summary><pre>%s</pre>"
-                   "</details>" % html.escape("\n".join(reasons)))
+    if lines:
+        label = "why killed" if verdict == "kill" else "defects"
+        details = ("<details><summary>%s</summary><pre>%s</pre>"
+                   "</details>" % (label, html.escape("\n".join(lines))))
     rank = r.get("rank_in_shot")
     return """<div class="take %s">
 <video src="%s" preload="metadata" muted></video>
@@ -138,7 +152,7 @@ def _take_card(t, report_dir):
         html.escape(out.get("file") or os.path.basename(t["_clip"])),
         verdict, verdict,
         html.escape(" · ".join(stats)),
-        _timeline(mech, duration), details)
+        _timeline(mech, duration, defects), details)
 
 
 def build(root, output):
@@ -170,7 +184,8 @@ def build(root, output):
 Hover a clip to scrub, click to play.</div>
 %s
 <div class="legend">timeline:<i class="span black"></i>black
-<i class="span freeze"></i>frozen <i class="cut"></i>cut</div>
+<i class="span freeze"></i>frozen <i class="cut"></i>cut
+<i class="defect"></i>vlm defect</div>
 <script>%s</script></body></html>""" % (
         CSS, len(takes), killed, len(takes) - killed,
         "\n".join(sections), JS)
