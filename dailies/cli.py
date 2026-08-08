@@ -7,7 +7,7 @@ import json
 import os
 import sys
 
-from . import __version__, mechanical, take
+from . import __version__, mechanical, rubric, take, vlm
 
 VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".avi"}
 
@@ -46,7 +46,10 @@ def _rank(takes):
             m = r["mechanical"]
             defects = (len(m["black_frames"]) + len(m["freeze"])
                        + len(m["scene_cuts"]))
-            return (r["verdict"] == "kill", defects, m["flicker_score"] or 0)
+            severity = sum(d["severity"] for d in
+                           (r.get("vlm") or {}).get("defects", []))
+            return (r["verdict"] == "kill", severity, defects,
+                    m["flicker_score"] or 0)
         for i, t in enumerate(sorted(group, key=key), start=1):
             t["review"]["rank_in_shot"] = i
 
@@ -74,6 +77,19 @@ def cmd_review(args):
                                 if info.get(k) is not None})
         if not t.get("shot"):
             t["shot"] = _shot_for(clip, args.shot)
+
+        r = t["review"]
+        if (args.vlm and r["verdict"] != "kill"
+                and (args.force or not r.get("vlm"))):
+            rules = rubric.load(args.rubric)
+            r["vlm"] = vlm.screen(
+                clip, t, rules, args.vlm, args.vlm_model,
+                api_key=os.environ.get("DAILIES_VLM_KEY"))
+            reasons = vlm.kill_reasons(r["vlm"], rules)
+            if reasons:
+                r["mechanical"]["kill_reasons"].extend(reasons)
+                r["verdict"] = "kill"
+
         t["_clip"] = clip
         t["_cached"] = bool(cached)
         results.append(t)
@@ -121,6 +137,15 @@ def main(argv=None):
     rv.add_argument("--shot", help="tag all reviewed takes with this shot id")
     rv.add_argument("--force", action="store_true",
                     help="re-review even when the cached take_id matches")
+    rv.add_argument("--vlm", metavar="URL",
+                    help="OpenAI-compatible endpoint base, e.g. "
+                         "http://localhost:8000/v1; enables stage 2. "
+                         "API key read from DAILIES_VLM_KEY if set")
+    rv.add_argument("--vlm-model", default="qwen3-vl",
+                    help="model name passed to the endpoint")
+    rv.add_argument("--rubric", metavar="FILE",
+                    help="rubric file (.json, or .yaml with PyYAML); "
+                         "default: built-in rules")
     rv.add_argument("--json", action="store_true")
     rv.set_defaults(func=cmd_review)
 
@@ -134,7 +159,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     try:
         return args.func(args)
-    except mechanical.FfmpegMissing as e:
+    except (mechanical.FfmpegMissing, vlm.VlmError, RuntimeError) as e:
         print("error: %s" % e, file=sys.stderr)
         return 2
 
