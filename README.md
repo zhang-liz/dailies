@@ -2,7 +2,7 @@
 
 Triage for AI-generated video takes. Batch-generate overnight, wake up to a ranked shortlist: the mechanical funnel kills the dead takes (decode errors, black, frozen) with timestamped reasons and ranks the survivors for review. It never claims a take is good; it claims most of them are definitely dead.
 
-Design: `docs/ideas-dailies-slate-mvp.md` at the repo root. Implemented so far: stage 1 of the funnel (mechanical, CPU only), stage 2 (VLM screening), and the morning report.
+Built so far: stage 1 of the funnel (mechanical, CPU only), stage 2 (VLM screening), and the morning report. Results live in per-clip sidecar files; the format is specified in [SPEC.md](SPEC.md) and is the contract for companion tooling (take lineage and recipe capture are a separate, upcoming tool).
 
 ## Requirements
 
@@ -11,7 +11,6 @@ Python 3.9+, ffmpeg and ffprobe on PATH. No Python dependencies; `blake3` is pic
 ## Use
 
 ```sh
-cd tools/dailies
 python3 -m dailies review ./takes            # or globs, or single files
 python3 -m dailies review shot-07/ --shot shot-07 --json
 python3 -m dailies report ./takes -o report.html
@@ -32,7 +31,7 @@ Each clip gets a `<clip>.take.json` sidecar: content-hash take id, probe info, b
 ## Tests
 
 ```sh
-cd tools/dailies && python3 -m unittest discover tests
+python3 -m unittest discover tests
 ```
 
 Tests generate synthetic clips with ffmpeg and assert the funnel's verdicts.
