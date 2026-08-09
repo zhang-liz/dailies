@@ -26,15 +26,12 @@ h2 { font-size: 17px; text-transform: uppercase; letter-spacing: .08em;
 .take { background: #17171c; border: 1px solid #26262c; border-radius: 8px;
   overflow: hidden; }
 .take.kill { border-color: #6b2f2f; }
-.player { position: relative; }
 .take video { display: block; width: 100%; height: auto;
   max-height: 76vh; background: #000; }
-/* Marker strip pinned just above the native control bar. The native
-   seekbar itself cannot be decorated, so the colors ride here. */
-.vmarks { position: absolute; left: 14px; right: 14px; bottom: 56px;
-  height: 10px; pointer-events: none; }
-.vmarks .defect { top: 1px; width: 8px; height: 8px;
-  box-shadow: 0 0 0 2px rgba(0,0,0,.55); }
+[data-t] { cursor: pointer; }
+a.seek { color: inherit; text-decoration: underline;
+  text-decoration-color: #55555e; text-underline-offset: 3px; }
+a.seek:hover { text-decoration-color: #e8e8ea; }
 .meta { padding: 10px 12px; }
 .row1 { display: flex; justify-content: space-between; align-items: baseline; }
 .name { font-weight: 600; overflow-wrap: anywhere; }
@@ -93,6 +90,18 @@ document.querySelectorAll('.take video').forEach(function (v) {
     }, { once: true });
   }
 });
+// Any timestamp or timeline dot jumps its card's video to that moment
+// and pauses on the frame.
+document.addEventListener('click', function (e) {
+  var el = e.target.closest('[data-t]');
+  if (!el) return;
+  var take = el.closest('.take');
+  var v = take && take.querySelector('video');
+  if (!v) return;
+  e.preventDefault();
+  v.pause();
+  v.currentTime = parseFloat(el.dataset.t);
+});
 """
 
 
@@ -134,16 +143,18 @@ def _timeline(mech, duration, defects=()):
     for d in defects:
         by_family.setdefault(d["rule"].split(".")[0], []).append(d)
         spans.append(
-            '<i class="defect %s" style="left:%.1f%%" title="%s"></i>' % (
+            '<i class="defect %s" style="left:%.1f%%" data-t="%s" '
+            'title="%s"></i>' % (
                 html.escape(d["rule"].split(".")[0]),
-                100 * min(d["t"], duration) / duration,
+                100 * min(d["t"], duration) / duration, d["t"],
                 html.escape("%s (%d): %s" % (
                     d["rule"], d["severity"], d["note"]))))
     for family in sorted(by_family):
         dots = "".join(
-            '<i class="defect %s" style="left:%.1f%%" title="%s"></i>' % (
+            '<i class="defect %s" style="left:%.1f%%" data-t="%s" '
+            'title="%s"></i>' % (
                 html.escape(family),
-                100 * min(d["t"], duration) / duration,
+                100 * min(d["t"], duration) / duration, d["t"],
                 html.escape("%s (%d): %s" % (
                     d["rule"], d["severity"], d["note"])))
             for d in by_family[family])
@@ -190,9 +201,13 @@ def _take_card(t, report_dir):
         groups.append(("mechanical", mech_reasons))
     by_family = {}
     for d in defects:
+        # The timestamp is a link that jumps the card's video to the
+        # defect; everything after it is escaped text.
         by_family.setdefault(d["rule"].split(".")[0], []).append(
-            "%ss %s (%d): %s" % (d["t"], d["rule"], d["severity"],
-                                 d["note"]))
+            '<a class="seek" data-t="%s">%ss</a> %s' % (
+                d["t"], d["t"],
+                html.escape("%s (%d): %s" % (
+                    d["rule"], d["severity"], d["note"]))))
     groups.extend(sorted(by_family.items()))
     details = ""
     if groups:
@@ -200,35 +215,21 @@ def _take_card(t, report_dir):
         body = "".join(
             '<div class="fam"><b class="lane-name %s">%s</b><pre>%s</pre>'
             "</div>" % (html.escape(fam), html.escape(fam),
-                        html.escape("\n".join(lines_)))
+                        "\n".join(lines_) if fam != "mechanical"
+                        else html.escape("\n".join(lines_)))
             for fam, lines_ in groups)
         details = ("<details><summary>%s</summary>%s</details>"
                    % (label, body))
     rank = r.get("rank_in_shot")
-    # Defect markers overlaid on the player itself, sitting just above the
-    # native control bar, so the colors travel with the video while it
-    # plays. The native seekbar cannot carry them.
-    vmarks = ""
-    if defects and duration:
-        dots = "".join(
-            '<i class="defect %s" style="left:%.1f%%" title="%s"></i>' % (
-                html.escape(d["rule"].split(".")[0]),
-                100 * min(d["t"], duration) / duration,
-                html.escape("%s (%d): %s" % (
-                    d["rule"], d["severity"], d["note"])))
-            for d in defects)
-        vmarks = '<div class="vmarks">%s</div>' % dots
     return """<div class="take %s">
-<div class="player">
 <video src="%s"%s preload="metadata" muted playsinline controls controlslist="nodownload noremoteplayback"></video>
-%s</div>
 <div class="meta">
 <div class="row1"><span class="name">%s%s</span>
 <span class="verdict %s">%s</span></div>
 <div class="stats">%s</div>
 %s%s
 </div></div>""" % (
-        verdict, html.escape(rel), poster, vmarks,
+        verdict, html.escape(rel), poster,
         ("#%d " % rank) if rank else "",
         html.escape(out.get("file") or os.path.basename(t["_clip"])),
         verdict, verdict,
@@ -264,7 +265,7 @@ def build(root, output):
 <title>dailies report</title><style>%s</style></head><body>
 <h1>Dailies</h1>
 <div class="sub">%d takes reviewed, %d killed, %d to watch.
-Play any clip with its controls; defect colors match the legend.</div>
+Click any timestamp or timeline dot to jump the clip to that moment.</div>
 %s
 <div class="legend">timeline:<i class="span black"></i>black
 <i class="span freeze"></i>frozen <i class="cut"></i>cut
