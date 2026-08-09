@@ -27,7 +27,7 @@ h2 { font-size: 17px; text-transform: uppercase; letter-spacing: .08em;
   overflow: hidden; }
 .take.kill { border-color: #6b2f2f; }
 .take video { display: block; width: 100%; height: auto;
-  max-height: 76vh; background: #000; cursor: ew-resize; }
+  max-height: 76vh; background: #000; }
 .meta { padding: 10px 12px; }
 .row1 { display: flex; justify-content: space-between; align-items: baseline; }
 .name { font-weight: 600; overflow-wrap: anywhere; }
@@ -85,16 +85,6 @@ document.querySelectorAll('.take video').forEach(function (v) {
       v.currentTime = Math.min(0.04, v.duration || 0);
     }, { once: true });
   }
-  // Hover-scrub is a preview aid; the native controls own playback. Scrub
-  // only while paused, and never in the strip where the control bar sits,
-  // so reaching for the play button does not yank the playhead.
-  v.addEventListener('mousemove', function (e) {
-    if (!v.duration || !v.paused) return;
-    var r = v.getBoundingClientRect();
-    if (e.clientY > r.bottom - 48) return;
-    v.currentTime = v.duration * Math.min(Math.max(
-      (e.clientX - r.left) / r.width, 0), 0.999);
-  });
 });
 """
 
@@ -129,12 +119,19 @@ def _timeline(mech, duration, defects=()):
     for t in mech.get("scene_cuts", []):
         spans.append('<i class="cut" style="left:%.1f%%"></i>'
                      % (100 * t / duration))
-    # One lane per defect family, so co-timed defects of different kinds
-    # never draw over each other.
+    # Every defect appears twice: on the main track for the at-a-glance
+    # aggregate, and in its family's lane where co-timed defects of
+    # different kinds cannot hide each other.
     lanes = []
     by_family = {}
     for d in defects:
         by_family.setdefault(d["rule"].split(".")[0], []).append(d)
+        spans.append(
+            '<i class="defect %s" style="left:%.1f%%" title="%s"></i>' % (
+                html.escape(d["rule"].split(".")[0]),
+                100 * min(d["t"], duration) / duration,
+                html.escape("%s (%d): %s" % (
+                    d["rule"], d["severity"], d["note"]))))
     for family in sorted(by_family):
         dots = "".join(
             '<i class="defect %s" style="left:%.1f%%" title="%s"></i>' % (
@@ -245,7 +242,7 @@ def build(root, output):
 <title>dailies report</title><style>%s</style></head><body>
 <h1>Dailies</h1>
 <div class="sub">%d takes reviewed, %d killed, %d to watch.
-Hover a paused clip to scrub; play with the controls.</div>
+Play any clip with its controls; defect colors match the legend.</div>
 %s
 <div class="legend">timeline:<i class="span black"></i>black
 <i class="span freeze"></i>frozen <i class="cut"></i>cut
