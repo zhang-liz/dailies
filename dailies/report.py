@@ -20,9 +20,9 @@ h1 { font-size: 24px; letter-spacing: .02em; margin-bottom: 4px; }
 h2 { font-size: 17px; text-transform: uppercase; letter-spacing: .08em;
   color: #b7b7bf; margin: 28px 0 12px; border-bottom: 1px solid #26262c;
   padding-bottom: 6px; }
-.takes { display: grid; grid-template-columns: repeat(auto-fill,
-  minmax(440px, 1fr)); gap: 16px; }
-@media (max-width: 500px) { .takes { grid-template-columns: 1fr; } }
+.takes { display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: 18px; }
+@media (max-width: 760px) { .takes { grid-template-columns: 1fr; } }
 .take { background: #17171c; border: 1px solid #26262c; border-radius: 8px;
   overflow: hidden; }
 .take.kill { border-color: #6b2f2f; }
