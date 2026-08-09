@@ -70,6 +70,7 @@ a.seek:hover { text-decoration-color: #e8e8ea; }
 .defect.physics { background: #d88a4f; }
 .defect.artifact { background: #a06fd8; }
 .defect.text { background: #d8c94f; }
+.defect.continuity { background: #6fb1d8; }
 .defect.environment { background: #4fd8b8; }
 .defect.adherence { background: #d84fa8; }
 .lane-name { font-family: inherit; font-weight: 400; font-size: 11px;
@@ -79,6 +80,7 @@ a.seek:hover { text-decoration-color: #e8e8ea; }
 .lane-name.physics { color: #d88a4f; }
 .lane-name.artifact { color: #a06fd8; }
 .lane-name.text { color: #d8c94f; }
+.lane-name.continuity { color: #6fb1d8; }
 .lane-name.environment { color: #4fd8b8; }
 .lane-name.adherence { color: #d84fa8; }
 details { margin-top: 8px; }
@@ -292,6 +294,7 @@ Click any timestamp or timeline dot to jump the clip to that moment.</div>
 <i class="span freeze"></i>frozen <i class="cut"></i>cut
 <i class="defect anatomy"></i>anatomy <i class="defect physics"></i>physics
 <i class="defect artifact"></i>artifact <i class="defect text"></i>text
+<i class="defect continuity"></i>continuity
 <i class="defect environment"></i>environment
 <i class="defect adherence"></i>adherence</div>
 %s
