@@ -8,6 +8,7 @@ video tags point at the clips relative to the report file.
 import html
 import json
 import os
+import re
 
 CSS = """
 :root { color-scheme: dark; }
@@ -180,9 +181,11 @@ def build(root, output):
             (t.get("review") or {}).get("rank_in_shot") or 10**6))
         kills = sum(1 for t in group
                     if (t.get("review") or {}).get("verdict") == "kill")
-        sections.append("<h2>%s · %d takes · %d killed</h2>"
+        # The heading is linkable (report.html#shot-07): slugged shot name.
+        slug = re.sub(r"[^a-z0-9]+", "-", shot.lower()).strip("-") or "shot"
+        sections.append('<h2 id="%s">%s · %d takes · %d killed</h2>'
                         '<div class="takes">%s</div>' % (
-                            html.escape(shot), len(group), kills,
+                            slug, html.escape(shot), len(group), kills,
                             "".join(_take_card(t, report_dir)
                                     for t in group)))
 
