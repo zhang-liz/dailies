@@ -62,10 +62,13 @@ def _request(endpoint, model, api_key, messages):
         "messages": messages,
         "temperature": 0,
     }).encode()
+    from . import __version__
     req = urllib.request.Request(
         endpoint.rstrip("/") + "/chat/completions",
         data=body, method="POST",
-        headers={"Content-Type": "application/json"})
+        headers={"Content-Type": "application/json",
+                 # Some gateways reject urllib's default agent string.
+                 "User-Agent": "dailies/" + __version__})
     if api_key:
         req.add_header("Authorization", "Bearer " + api_key)
     try:
