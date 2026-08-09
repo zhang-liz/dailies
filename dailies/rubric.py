@@ -29,10 +29,34 @@ DEFAULT = {
                   "duplicate, or teleport between frames.",
         "fail_at": 4,
     },
+    "anatomy.limbs": {
+        "prompt": "Check every visible body: number of arms and legs, "
+                  "joint bends, and poses. Report extra or missing limbs "
+                  "and impossible articulation.",
+        "fail_at": 4,
+    },
     "physics.contact": {
         "prompt": "Do held or contacted objects move rigidly with the hand "
                   "or surface touching them? Report slipping, clipping, or "
                   "floating contact.",
+        "fail_at": 4,
+    },
+    "physics.motion": {
+        "prompt": "Does movement obey gravity and momentum? Report objects "
+                  "or people that glide, accelerate impossibly, or move "
+                  "without a driving force.",
+        "fail_at": 4,
+    },
+    "environment.stability": {
+        "prompt": "Watch the background and setting. Report walls, "
+                  "furniture, or scenery that melt, warp, or rearrange "
+                  "between frames.",
+        "fail_at": 4,
+    },
+    "text.legibility": {
+        "prompt": "Find any text in the frames: signs, labels, screens, "
+                  "clothing. Report text that is garbled, misspelled, or "
+                  "changes between frames.",
         "fail_at": 4,
     },
     "adherence.prompt": {
