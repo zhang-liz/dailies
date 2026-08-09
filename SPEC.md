@@ -22,7 +22,7 @@ One sidecar file per generated clip, named `<clip>.take.json`, next to the clip.
   },
   "review": {
     "mechanical": { "black_frames": [], "freeze": [], "scene_cuts": [], "flicker_score": 0.12, "candidate_frames": [0.0, 3.2], "kill_reasons": [] },
-    "vlm": { "engine": "qwen3-vl", "defects": [ { "t": 3.2, "rule": "anatomy.hands", "severity": 3, "note": "left hand 6 fingers during cup grab" } ], "skipped": [], "unparsed": [] },
+    "vlm": { "engine": "qwen3-vl", "defects": [ { "t": 3.2, "t_end": 4.1, "rule": "anatomy.hands", "severity": 3, "note": "left hand 6 fingers during cup grab" } ], "skipped": [], "unparsed": [] },
     "verdict": "keep | kill | review",
     "rank_in_shot": 2
   }
@@ -36,6 +36,7 @@ One sidecar file per generated clip, named `<clip>.take.json`, next to the clip.
 - **`recipe` belongs to generation tooling, `review` to review tooling.** Either block may be null; each tool works alone. A reviewer on a bare folder of clips writes sidecars with `recipe: null`; a recorder without a reviewer leaves `review: null`.
 - **Unknown keys are preserved, never stripped.** Tools rewrite a sidecar by reading it, replacing their own block, and writing the rest back untouched.
 - **`parent` links a rerun to its source take.** Lineage is the chain of parent pointers; no separate database is required.
+- **A defect is one finding, not one frame.** Per-frame repeats of the same rule at contiguous timestamps merge into a single defect; `t_end` (optional) marks the span.
 - **Verdicts are honest.** `kill` requires stated reasons. Mechanical checks alone never produce `keep`; that requires eyes or a screening model.
 
 ## Status

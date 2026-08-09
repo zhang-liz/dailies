@@ -105,6 +105,29 @@ def _parse_defects(text):
     return out
 
 
+MERGE_GAP = 0.8
+
+
+def _merge(defects):
+    """Collapse per-frame repeats of one underlying defect into a single
+    entry with a time range. Same rule, near-contiguous timestamps: one
+    defect. Keeps the highest-severity note; records the span as t_end."""
+    defects = sorted(defects, key=lambda d: (d["rule"], d["t"]))
+    out = []
+    for d in defects:
+        last = out[-1] if out else None
+        if (last is not None and last["rule"] == d["rule"]
+                and d["t"] - last.get("t_end", last["t"]) <= MERGE_GAP):
+            last["t_end"] = d["t"]
+            if d["severity"] > last["severity"]:
+                last["severity"] = d["severity"]
+                last["note"] = d["note"]
+        else:
+            out.append(dict(d))
+    out.sort(key=lambda d: d["t"])
+    return out
+
+
 def screen(clip, take, rules, endpoint, model, api_key=None):
     """Run every applicable rubric rule over the clip's candidate frames.
     Returns the take.json "vlm" block."""
@@ -145,7 +168,7 @@ def screen(clip, take, rules, endpoint, model, api_key=None):
             d["rule"] = name
         result["defects"].extend(defects)
 
-    result["defects"].sort(key=lambda d: d["t"])
+    result["defects"] = _merge(result["defects"])
     return result
 
 
@@ -155,6 +178,8 @@ def kill_reasons(vlm_block, rules):
     for d in vlm_block.get("defects", []):
         fail_at = (rules.get(d["rule"]) or {}).get("fail_at")
         if fail_at is not None and d["severity"] >= fail_at:
-            reasons.append("%s severity %d at %ss: %s" % (
-                d["rule"], d["severity"], d["t"], d["note"]))
+            when = ("%s-%ss" % (d["t"], d["t_end"])
+                    if d.get("t_end") else "%ss" % d["t"])
+            reasons.append("%s severity %d at %s: %s" % (
+                d["rule"], d["severity"], when, d["note"]))
     return reasons

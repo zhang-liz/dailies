@@ -48,8 +48,8 @@ a.seek:hover { text-decoration-color: #e8e8ea; }
 .cut { position: absolute; top: -2px; width: 2px; height: 12px;
   background: #d8a24f; }
 .defect { position: absolute; top: -3px; width: 12px; height: 12px;
-  border-radius: 50%; background: #d8564f; transform: translateX(-6px);
-  transition: transform .1s; }
+  min-width: 12px; border-radius: 50%; background: #d8564f;
+  transform: translateX(-6px); transition: transform .1s; }
 .timeline .defect:hover { transform: translateX(-6px) scale(1.3);
   z-index: 6; }
 /* Instant tooltip; the native title waits a second, this does not. */
@@ -147,18 +147,24 @@ def _timeline(mech, duration, defects=()):
     max_row = 0
     for d in sorted(defects, key=lambda d: d["t"]):
         pct = 100 * min(d["t"], duration) / duration
+        end_pct = (100 * min(d["t_end"], duration) / duration
+                   if d.get("t_end") else pct)
         row = 0
         while any(abs(pct - p) < 1.8 and r == row for p, r in placed):
             row += 1
         placed.append((pct, row))
         max_row = max(max_row, row)
+        width = ";width:%.1f%%;border-radius:6px" % (end_pct - pct) \
+            if end_pct > pct else ""
+        when = ("%s-%ss" % (d["t"], d["t_end"])
+                if d.get("t_end") else "%ss" % d["t"])
         spans.append(
-            '<i class="defect %s" style="left:%.1f%%;top:%dpx" data-t="%s" '
-            'data-note="%s"></i>' % (
+            '<i class="defect %s" style="left:%.1f%%;top:%dpx%s" '
+            'data-t="%s" data-note="%s"></i>' % (
                 html.escape(d["rule"].split(".")[0]), pct, 2 + row * 14,
-                d["t"],
-                html.escape("%s (%d): %s" % (
-                    d["rule"], d["severity"], d["note"]))))
+                width, d["t"],
+                html.escape("%s %s (%d): %s" % (
+                    when, d["rule"], d["severity"], d["note"]))))
     height = 16 + max_row * 14
     return ('<div class="timeline" style="height:%dpx">%s</div>'
             % (height, "".join(spans)))
@@ -202,9 +208,11 @@ def _take_card(t, report_dir):
     for d in defects:
         # The timestamp is a link that jumps the card's video to the
         # defect; everything after it is escaped text.
+        when = ("%s-%ss" % (d["t"], d["t_end"])
+                if d.get("t_end") else "%ss" % d["t"])
         by_family.setdefault(d["rule"].split(".")[0], []).append(
-            '<a class="seek" data-t="%s">%ss</a> %s' % (
-                d["t"], d["t"],
+            '<a class="seek" data-t="%s">%s</a> %s' % (
+                d["t"], when,
                 html.escape("%s (%d): %s" % (
                     d["rule"], d["severity"], d["note"]))))
     groups.extend(sorted(by_family.items()))

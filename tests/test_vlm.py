@@ -132,3 +132,29 @@ class VlmTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MergeTests(unittest.TestCase):
+    def test_per_frame_repeats_collapse_to_a_range(self):
+        d = lambda t, sev=4: {"t": t, "severity": sev, "rule": "text.legibility",
+                              "note": "Sign reads 5-5PM"}
+        merged = vlm._merge([d(3.875), d(3.917), d(4.042), d(4.083),
+                             d(4.125), d(4.167), d(4.333)])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["t"], 3.875)
+        self.assertEqual(merged[0]["t_end"], 4.333)
+
+    def test_distant_and_cross_rule_defects_stay_separate(self):
+        merged = vlm._merge([
+            {"t": 0.0, "severity": 4, "rule": "text.legibility", "note": "a"},
+            {"t": 3.0, "severity": 4, "rule": "text.legibility", "note": "b"},
+            {"t": 3.0, "severity": 3, "rule": "anatomy.hands", "note": "c"}])
+        self.assertEqual(len(merged), 3)
+        self.assertTrue(all("t_end" not in m for m in merged))
+
+    def test_merge_keeps_highest_severity_note(self):
+        merged = vlm._merge([
+            {"t": 1.0, "severity": 3, "rule": "r.x", "note": "mild"},
+            {"t": 1.5, "severity": 5, "rule": "r.x", "note": "severe"}])
+        self.assertEqual(merged[0]["severity"], 5)
+        self.assertEqual(merged[0]["note"], "severe")
