@@ -23,11 +23,12 @@ h2 { font-size: 17px; text-transform: uppercase; letter-spacing: .08em;
 .takes { display: grid; grid-template-columns: repeat(2, 1fr);
   gap: 18px; }
 @media (max-width: 760px) { .takes { grid-template-columns: 1fr; } }
-.take { background: #17171c; border: 1px solid #26262c; border-radius: 8px;
-  overflow: hidden; }
+.take { background: #17171c; border: 1px solid #26262c;
+  border-radius: 8px; }
 .take.kill { border-color: #6b2f2f; }
 .take video { display: block; width: 100%; height: auto;
-  max-height: 76vh; background: #000; }
+  max-height: 76vh; background: #000;
+  border-radius: 7px 7px 0 0; }
 [data-t] { cursor: pointer; }
 a.seek { color: inherit; text-decoration: underline;
   text-decoration-color: #55555e; text-underline-offset: 3px; }
@@ -60,6 +61,10 @@ a.seek:hover { text-decoration-color: #e8e8ea; }
   width: max-content; max-width: 340px; white-space: normal;
   opacity: 0; pointer-events: none; transition: opacity .08s; z-index: 7; }
 .timeline .defect:hover::after { opacity: 1; }
+/* Edge dots align the tooltip inward so it cannot leave the page. */
+.timeline .defect.tip-left::after { left: 0; transform: none; }
+.timeline .defect.tip-right::after { left: auto; right: 0;
+  transform: none; }
 .defect.anatomy { background: #d8564f; }
 .defect.physics { background: #d88a4f; }
 .defect.artifact { background: #a06fd8; }
@@ -158,11 +163,13 @@ def _timeline(mech, duration, defects=()):
             if end_pct > pct else ""
         when = ("%s-%ss" % (d["t"], d["t_end"])
                 if d.get("t_end") else "%ss" % d["t"])
+        tip = " tip-left" if pct < 18 else (
+            " tip-right" if pct > 82 else "")
         spans.append(
-            '<i class="defect %s" style="left:%.1f%%;top:%dpx%s" '
+            '<i class="defect %s%s" style="left:%.1f%%;top:%dpx%s" '
             'data-t="%s" data-note="%s"></i>' % (
-                html.escape(d["rule"].split(".")[0]), pct, 2 + row * 14,
-                width, d["t"],
+                html.escape(d["rule"].split(".")[0]), tip, pct,
+                2 + row * 14, width, d["t"],
                 html.escape("%s %s (%d): %s" % (
                     when, d["rule"], d["severity"], d["note"]))))
     height = 16 + max_row * 14
