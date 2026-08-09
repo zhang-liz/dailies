@@ -21,7 +21,8 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em;
   color: #b7b7bf; margin: 28px 0 12px; border-bottom: 1px solid #26262c;
   padding-bottom: 6px; }
 .takes { display: grid; grid-template-columns: repeat(auto-fill,
-  minmax(300px, 1fr)); gap: 16px; }
+  minmax(440px, 1fr)); gap: 16px; }
+@media (max-width: 500px) { .takes { grid-template-columns: 1fr; } }
 .take { background: #17171c; border: 1px solid #26262c; border-radius: 8px;
   overflow: hidden; }
 .take.kill { opacity: .55; }
@@ -50,10 +51,25 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em;
 .defect.text { background: #d8c94f; }
 .defect.environment { background: #4fd8b8; }
 .defect.adherence { background: #d84fa8; }
+.lane { position: relative; height: 14px; margin-top: 5px; }
+.lane-track { position: absolute; left: 96px; right: 8px; top: 0;
+  height: 100%; }
+.lane .defect { top: 4px; }
+.lane-name { font-family: inherit; font-weight: 400; font-size: 9px;
+  letter-spacing: .1em; text-transform: uppercase; }
+.lane > .lane-name { position: absolute; left: 0; top: 1px; }
+.lane-name.mechanical { color: #8b8b93; }
+.lane-name.anatomy { color: #d8564f; }
+.lane-name.physics { color: #d88a4f; }
+.lane-name.artifact { color: #a06fd8; }
+.lane-name.text { color: #d8c94f; }
+.lane-name.environment { color: #4fd8b8; }
+.lane-name.adherence { color: #d84fa8; }
 details { margin-top: 8px; }
 summary { cursor: pointer; color: #8b8b93; font-size: 12px; }
-details pre { white-space: pre-wrap; font-size: 12px; color: #d87f7f;
-  margin-top: 6px; }
+.fam { margin-top: 8px; }
+.fam pre { white-space: pre-wrap; font-size: 12px; color: #b7b7bf;
+  margin-top: 3px; }
 .legend { color: #8b8b93; font-size: 12px; margin-top: 24px; }
 .legend i { position: static; transform: none; display: inline-block;
   width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 12px;
@@ -113,14 +129,25 @@ def _timeline(mech, duration, defects=()):
     for t in mech.get("scene_cuts", []):
         spans.append('<i class="cut" style="left:%.1f%%"></i>'
                      % (100 * t / duration))
+    # One lane per defect family, so co-timed defects of different kinds
+    # never draw over each other.
+    lanes = []
+    by_family = {}
     for d in defects:
-        family = d["rule"].split(".")[0]
-        spans.append('<i class="defect %s" style="left:%.1f%%" title="%s">'
-                     "</i>" % (html.escape(family),
-                               100 * min(d["t"], duration) / duration,
-                               html.escape("%s (%d): %s" % (
-                                   d["rule"], d["severity"], d["note"]))))
-    return '<div class="timeline">%s</div>' % "".join(spans)
+        by_family.setdefault(d["rule"].split(".")[0], []).append(d)
+    for family in sorted(by_family):
+        dots = "".join(
+            '<i class="defect %s" style="left:%.1f%%" title="%s"></i>' % (
+                html.escape(family),
+                100 * min(d["t"], duration) / duration,
+                html.escape("%s (%d): %s" % (
+                    d["rule"], d["severity"], d["note"])))
+            for d in by_family[family])
+        lanes.append('<div class="lane"><b class="lane-name %s">%s</b>'
+                     '<span class="lane-track">%s</span></div>'
+                     % (html.escape(family), html.escape(family), dots))
+    return ('<div class="timeline">%s</div>%s'
+            % ("".join(spans), "".join(lanes)))
 
 
 def _take_card(t, report_dir):
@@ -150,15 +177,29 @@ def _take_card(t, report_dir):
     defects = (r.get("vlm") or {}).get("defects") or []
     if defects:
         stats.append("%d defects" % len(defects))
-    reasons = mech.get("kill_reasons") or []
-    lines = list(reasons)
-    lines.extend("%ss %s (%d): %s" % (d["t"], d["rule"], d["severity"],
-                                      d["note"]) for d in defects)
+    # Sectioned by family, each section under a colored heading, so a take
+    # that failed three different ways reads as three groups, not one wall.
+    mech_reasons = [r_ for r_ in (mech.get("kill_reasons") or [])
+                    if not any(r_.startswith(d["rule"]) for d in defects)]
+    groups = []
+    if mech_reasons:
+        groups.append(("mechanical", mech_reasons))
+    by_family = {}
+    for d in defects:
+        by_family.setdefault(d["rule"].split(".")[0], []).append(
+            "%ss %s (%d): %s" % (d["t"], d["rule"], d["severity"],
+                                 d["note"]))
+    groups.extend(sorted(by_family.items()))
     details = ""
-    if lines:
+    if groups:
         label = "why killed" if verdict == "kill" else "defects"
-        details = ("<details><summary>%s</summary><pre>%s</pre>"
-                   "</details>" % (label, html.escape("\n".join(lines))))
+        body = "".join(
+            '<div class="fam"><b class="lane-name %s">%s</b><pre>%s</pre>'
+            "</div>" % (html.escape(fam), html.escape(fam),
+                        html.escape("\n".join(lines_)))
+            for fam, lines_ in groups)
+        details = ("<details><summary>%s</summary>%s</details>"
+                   % (label, body))
     rank = r.get("rank_in_shot")
     return """<div class="take %s">
 <video src="%s"%s preload="metadata" muted playsinline controls controlslist="nodownload noremoteplayback"></video>
