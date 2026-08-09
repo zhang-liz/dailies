@@ -55,18 +55,22 @@ details pre { white-space: pre-wrap; font-size: 12px; color: #d87f7f;
 
 JS = """
 document.querySelectorAll('.take video').forEach(function (v) {
-  // Decode one frame so the card is not a black box.
-  v.addEventListener('loadedmetadata', function () {
-    v.currentTime = Math.min(0.04, v.duration || 0);
-  }, { once: true });
+  // Without a poster the card is a black box until a frame decodes, so
+  // decode one. With a poster, leave it be.
+  if (!v.poster) {
+    v.addEventListener('loadedmetadata', function () {
+      v.currentTime = Math.min(0.04, v.duration || 0);
+    }, { once: true });
+  }
+  // Hover-scrub is a preview aid; the native controls own playback. Scrub
+  // only while paused, and never in the strip where the control bar sits,
+  // so reaching for the play button does not yank the playhead.
   v.addEventListener('mousemove', function (e) {
-    if (!v.duration) return;
+    if (!v.duration || !v.paused) return;
     var r = v.getBoundingClientRect();
+    if (e.clientY > r.bottom - 48) return;
     v.currentTime = v.duration * Math.min(Math.max(
       (e.clientX - r.left) / r.width, 0), 0.999);
-  });
-  v.addEventListener('click', function () {
-    v.paused ? v.play() : v.pause();
   });
 });
 """
@@ -148,7 +152,7 @@ def _take_card(t, report_dir):
                    "</details>" % (label, html.escape("\n".join(lines))))
     rank = r.get("rank_in_shot")
     return """<div class="take %s">
-<video src="%s"%s preload="metadata" muted playsinline></video>
+<video src="%s"%s preload="metadata" muted playsinline controls controlslist="nodownload noremoteplayback"></video>
 <div class="meta">
 <div class="row1"><span class="name">%s%s</span>
 <span class="verdict %s">%s</span></div>
@@ -189,7 +193,7 @@ def build(root, output):
 <title>dailies report</title><style>%s</style></head><body>
 <h1>Dailies</h1>
 <div class="sub">%d takes reviewed, %d killed, %d to watch.
-Hover a clip to scrub, click to play.</div>
+Hover a paused clip to scrub; play with the controls.</div>
 %s
 <div class="legend">timeline:<i class="span black"></i>black
 <i class="span freeze"></i>frozen <i class="cut"></i>cut
