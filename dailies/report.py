@@ -55,13 +55,8 @@ a.seek:hover { text-decoration-color: #e8e8ea; }
 .defect.text { background: #d8c94f; }
 .defect.environment { background: #4fd8b8; }
 .defect.adherence { background: #d84fa8; }
-.lane { position: relative; height: 14px; margin-top: 5px; }
-.lane-track { position: absolute; left: 96px; right: 8px; top: 0;
-  height: 100%; }
-.lane .defect { top: 4px; }
 .lane-name { font-family: inherit; font-weight: 400; font-size: 11px;
   letter-spacing: .1em; text-transform: uppercase; }
-.lane > .lane-name { position: absolute; left: 0; top: 1px; }
 .lane-name.mechanical { color: #8b8b93; }
 .lane-name.anatomy { color: #d8564f; }
 .lane-name.physics { color: #d88a4f; }
@@ -74,7 +69,7 @@ summary { cursor: pointer; color: #9a9aa3; font-size: 14px; }
 .fam { margin-top: 8px; }
 .fam pre { white-space: pre-wrap; font-size: 14px; color: #c4c4cc;
   margin-top: 3px; }
-.legend { color: #9a9aa3; font-size: 14px; margin-top: 24px; }
+.legend { color: #9a9aa3; font-size: 14px; margin: -16px 0 24px; }
 .legend i { position: static; transform: none; display: inline-block;
   width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 12px;
   vertical-align: -1px; }
@@ -135,34 +130,27 @@ def _timeline(mech, duration, defects=()):
     for t in mech.get("scene_cuts", []):
         spans.append('<i class="cut" style="left:%.1f%%"></i>'
                      % (100 * t / duration))
-    # Every defect appears twice: on the main track for the at-a-glance
-    # aggregate, and in its family's lane where co-timed defects of
-    # different kinds cannot hide each other.
-    lanes = []
-    by_family = {}
-    for d in defects:
-        by_family.setdefault(d["rule"].split(".")[0], []).append(d)
+    # All defects share the one track. Dots that would land on top of each
+    # other stack downward instead, so every color stays visible.
+    placed = []
+    max_row = 0
+    for d in sorted(defects, key=lambda d: d["t"]):
+        pct = 100 * min(d["t"], duration) / duration
+        row = 0
+        while any(abs(pct - p) < 1.8 and r == row for p, r in placed):
+            row += 1
+        placed.append((pct, row))
+        max_row = max(max_row, row)
         spans.append(
-            '<i class="defect %s" style="left:%.1f%%" data-t="%s" '
+            '<i class="defect %s" style="left:%.1f%%;top:%dpx" data-t="%s" '
             'title="%s"></i>' % (
-                html.escape(d["rule"].split(".")[0]),
-                100 * min(d["t"], duration) / duration, d["t"],
+                html.escape(d["rule"].split(".")[0]), pct, 1 + row * 8,
+                d["t"],
                 html.escape("%s (%d): %s" % (
                     d["rule"], d["severity"], d["note"]))))
-    for family in sorted(by_family):
-        dots = "".join(
-            '<i class="defect %s" style="left:%.1f%%" data-t="%s" '
-            'title="%s"></i>' % (
-                html.escape(family),
-                100 * min(d["t"], duration) / duration, d["t"],
-                html.escape("%s (%d): %s" % (
-                    d["rule"], d["severity"], d["note"])))
-            for d in by_family[family])
-        lanes.append('<div class="lane"><b class="lane-name %s">%s</b>'
-                     '<span class="lane-track">%s</span></div>'
-                     % (html.escape(family), html.escape(family), dots))
-    return ('<div class="timeline">%s</div>%s'
-            % ("".join(spans), "".join(lanes)))
+    height = 8 + max_row * 8
+    return ('<div class="timeline" style="height:%dpx">%s</div>'
+            % (height, "".join(spans)))
 
 
 def _take_card(t, report_dir):
@@ -266,13 +254,13 @@ def build(root, output):
 <h1>Dailies</h1>
 <div class="sub">%d takes reviewed, %d killed, %d to watch.
 Click any timestamp or timeline dot to jump the clip to that moment.</div>
-%s
 <div class="legend">timeline:<i class="span black"></i>black
 <i class="span freeze"></i>frozen <i class="cut"></i>cut
 <i class="defect anatomy"></i>anatomy <i class="defect physics"></i>physics
 <i class="defect artifact"></i>artifact <i class="defect text"></i>text
 <i class="defect environment"></i>environment
 <i class="defect adherence"></i>adherence</div>
+%s
 <script>%s</script></body></html>""" % (
         CSS, len(takes), killed, len(takes) - killed,
         "\n".join(sections), JS)
