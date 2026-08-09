@@ -115,6 +115,14 @@ def _take_card(t, report_dir):
     mech = r.get("mechanical") or {}
     verdict = r.get("verdict", "review")
     rel = os.path.relpath(t["_clip"], report_dir)
+    # A sibling jpg (same name, .jpg) becomes the poster, so cards show a
+    # frame before any video data loads. Browsers vary on whether an unplayed
+    # video paints at all; a poster removes the dependence.
+    poster = ""
+    jpg = os.path.splitext(t["_clip"])[0] + ".jpg"
+    if os.path.exists(jpg):
+        poster = ' poster="%s"' % html.escape(
+            os.path.relpath(jpg, report_dir))
     out = t.get("output", {})
     duration = (mech.get("probe") or {}).get("duration")
     stats = []
@@ -140,14 +148,14 @@ def _take_card(t, report_dir):
                    "</details>" % (label, html.escape("\n".join(lines))))
     rank = r.get("rank_in_shot")
     return """<div class="take %s">
-<video src="%s" preload="metadata" muted></video>
+<video src="%s"%s preload="metadata" muted playsinline></video>
 <div class="meta">
 <div class="row1"><span class="name">%s%s</span>
 <span class="verdict %s">%s</span></div>
 <div class="stats">%s</div>
 %s%s
 </div></div>""" % (
-        verdict, html.escape(rel),
+        verdict, html.escape(rel), poster,
         ("#%d " % rank) if rank else "",
         html.escape(out.get("file") or os.path.basename(t["_clip"])),
         verdict, verdict,
