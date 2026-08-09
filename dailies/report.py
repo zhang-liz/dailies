@@ -38,7 +38,8 @@ a.seek:hover { text-decoration-color: #e8e8ea; }
 .name { font-weight: 600; overflow-wrap: anywhere; }
 .verdict { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
   padding: 2px 7px; border-radius: 99px; }
-.verdict.review { background: #1d3a2a; color: #7fd8a2; }
+.verdict.passed { background: #1d3a2a; color: #7fd8a2; }
+.verdict.review { background: #3a331d; color: #d8c97f; }
 .verdict.kill { background: #3a1d1d; color: #d87f7f; }
 .stats { color: #9a9aa3; font-size: 14px; margin-top: 4px; }
 .timeline { position: relative; height: 8px; background: #26262c;
@@ -235,6 +236,11 @@ def _take_card(t, report_dir):
         details = ("<details><summary>%s</summary>%s</details>"
                    % (label, body))
     rank = r.get("rank_in_shot")
+    # Display label: kill stays kill; a survivor with findings says
+    # "review" (something to look at), a survivor with none says
+    # "passed". The sidecar verdict enum is unchanged.
+    label = verdict if verdict == "kill" else (
+        "review" if defects else "passed")
     return """<div class="take %s">
 <video src="%s"%s preload="metadata" muted playsinline controls controlslist="nodownload noremoteplayback"></video>
 <div class="meta">
@@ -246,7 +252,7 @@ def _take_card(t, report_dir):
         verdict, html.escape(rel), poster,
         ("#%d " % rank) if rank else "",
         html.escape(out.get("file") or os.path.basename(t["_clip"])),
-        verdict, verdict,
+        label, label,
         html.escape(" · ".join(stats)),
         _timeline(mech, duration, defects), details)
 
