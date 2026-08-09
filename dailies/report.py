@@ -26,8 +26,15 @@ h2 { font-size: 17px; text-transform: uppercase; letter-spacing: .08em;
 .take { background: #17171c; border: 1px solid #26262c; border-radius: 8px;
   overflow: hidden; }
 .take.kill { border-color: #6b2f2f; }
+.player { position: relative; }
 .take video { display: block; width: 100%; height: auto;
   max-height: 76vh; background: #000; }
+/* Marker strip pinned just above the native control bar. The native
+   seekbar itself cannot be decorated, so the colors ride here. */
+.vmarks { position: absolute; left: 14px; right: 14px; bottom: 56px;
+  height: 10px; pointer-events: none; }
+.vmarks .defect { top: 1px; width: 8px; height: 8px;
+  box-shadow: 0 0 0 2px rgba(0,0,0,.55); }
 .meta { padding: 10px 12px; }
 .row1 { display: flex; justify-content: space-between; align-items: baseline; }
 .name { font-weight: 600; overflow-wrap: anywhere; }
@@ -198,15 +205,30 @@ def _take_card(t, report_dir):
         details = ("<details><summary>%s</summary>%s</details>"
                    % (label, body))
     rank = r.get("rank_in_shot")
+    # Defect markers overlaid on the player itself, sitting just above the
+    # native control bar, so the colors travel with the video while it
+    # plays. The native seekbar cannot carry them.
+    vmarks = ""
+    if defects and duration:
+        dots = "".join(
+            '<i class="defect %s" style="left:%.1f%%" title="%s"></i>' % (
+                html.escape(d["rule"].split(".")[0]),
+                100 * min(d["t"], duration) / duration,
+                html.escape("%s (%d): %s" % (
+                    d["rule"], d["severity"], d["note"])))
+            for d in defects)
+        vmarks = '<div class="vmarks">%s</div>' % dots
     return """<div class="take %s">
+<div class="player">
 <video src="%s"%s preload="metadata" muted playsinline controls controlslist="nodownload noremoteplayback"></video>
+%s</div>
 <div class="meta">
 <div class="row1"><span class="name">%s%s</span>
 <span class="verdict %s">%s</span></div>
 <div class="stats">%s</div>
 %s%s
 </div></div>""" % (
-        verdict, html.escape(rel), poster,
+        verdict, html.escape(rel), poster, vmarks,
         ("#%d " % rank) if rank else "",
         html.escape(out.get("file") or os.path.basename(t["_clip"])),
         verdict, verdict,
