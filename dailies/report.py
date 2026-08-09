@@ -44,6 +44,12 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em;
   background: #d8a24f; }
 .defect { position: absolute; top: -3px; width: 6px; height: 6px;
   border-radius: 50%; background: #d8564f; transform: translateX(-3px); }
+.defect.anatomy { background: #d8564f; }
+.defect.physics { background: #d88a4f; }
+.defect.artifact { background: #a06fd8; }
+.defect.text { background: #d8c94f; }
+.defect.environment { background: #4fd8b8; }
+.defect.adherence { background: #d84fa8; }
 details { margin-top: 8px; }
 summary { cursor: pointer; color: #8b8b93; font-size: 12px; }
 details pre { white-space: pre-wrap; font-size: 12px; color: #d87f7f;
@@ -108,10 +114,12 @@ def _timeline(mech, duration, defects=()):
         spans.append('<i class="cut" style="left:%.1f%%"></i>'
                      % (100 * t / duration))
     for d in defects:
-        spans.append('<i class="defect" style="left:%.1f%%" title="%s"></i>'
-                     % (100 * min(d["t"], duration) / duration,
-                        html.escape("%s (%d): %s" % (
-                            d["rule"], d["severity"], d["note"]))))
+        family = d["rule"].split(".")[0]
+        spans.append('<i class="defect %s" style="left:%.1f%%" title="%s">'
+                     "</i>" % (html.escape(family),
+                               100 * min(d["t"], duration) / duration,
+                               html.escape("%s (%d): %s" % (
+                                   d["rule"], d["severity"], d["note"]))))
     return '<div class="timeline">%s</div>' % "".join(spans)
 
 
@@ -200,7 +208,10 @@ Hover a paused clip to scrub; play with the controls.</div>
 %s
 <div class="legend">timeline:<i class="span black"></i>black
 <i class="span freeze"></i>frozen <i class="cut"></i>cut
-<i class="defect"></i>vlm defect</div>
+<i class="defect anatomy"></i>anatomy <i class="defect physics"></i>physics
+<i class="defect artifact"></i>artifact <i class="defect text"></i>text
+<i class="defect environment"></i>environment
+<i class="defect adherence"></i>adherence</div>
 <script>%s</script></body></html>""" % (
         CSS, len(takes), killed, len(takes) - killed,
         "\n".join(sections), JS)
