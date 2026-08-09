@@ -47,8 +47,19 @@ a.seek:hover { text-decoration-color: #e8e8ea; }
 .span.freeze { background: #4f7dd8; }
 .cut { position: absolute; top: -2px; width: 2px; height: 12px;
   background: #d8a24f; }
-.defect { position: absolute; top: -3px; width: 6px; height: 6px;
-  border-radius: 50%; background: #d8564f; transform: translateX(-3px); }
+.defect { position: absolute; top: -3px; width: 12px; height: 12px;
+  border-radius: 50%; background: #d8564f; transform: translateX(-6px);
+  transition: transform .1s; }
+.timeline .defect:hover { transform: translateX(-6px) scale(1.3);
+  z-index: 6; }
+/* Instant tooltip; the native title waits a second, this does not. */
+.timeline .defect::after { content: attr(data-note); position: absolute;
+  bottom: 16px; left: 50%; transform: translateX(-50%);
+  background: #1f1f26; border: 1px solid #3a3a44; border-radius: 8px;
+  padding: 8px 12px; font-size: 13px; line-height: 1.5; color: #e8e8ea;
+  width: max-content; max-width: 340px; white-space: normal;
+  opacity: 0; pointer-events: none; transition: opacity .08s; z-index: 7; }
+.timeline .defect:hover::after { opacity: 1; }
 .defect.anatomy { background: #d8564f; }
 .defect.physics { background: #d88a4f; }
 .defect.artifact { background: #a06fd8; }
@@ -143,12 +154,12 @@ def _timeline(mech, duration, defects=()):
         max_row = max(max_row, row)
         spans.append(
             '<i class="defect %s" style="left:%.1f%%;top:%dpx" data-t="%s" '
-            'title="%s"></i>' % (
-                html.escape(d["rule"].split(".")[0]), pct, 1 + row * 8,
+            'data-note="%s"></i>' % (
+                html.escape(d["rule"].split(".")[0]), pct, 2 + row * 14,
                 d["t"],
                 html.escape("%s (%d): %s" % (
                     d["rule"], d["severity"], d["note"]))))
-    height = 8 + max_row * 8
+    height = 16 + max_row * 14
     return ('<div class="timeline" style="height:%dpx">%s</div>'
             % (height, "".join(spans)))
 
