@@ -57,7 +57,7 @@ class ReportTests(unittest.TestCase):
         out = os.path.join(self.dir, "report.html")
         main(["report", self.dir, "-o", out])
         page = open(out).read()
-        self.assertIn('class="defect"', page)
+        self.assertIn('class="defect anatomy"', page)
         self.assertIn("anatomy.hands (4): six fingers", page)
         self.assertIn("1 defects", page)
         # survivor with defects gets a details block labeled defects
