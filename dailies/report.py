@@ -237,9 +237,11 @@ def _take_card(t, report_dir):
                    % (label, body))
     rank = r.get("rank_in_shot")
     # Display label: kill stays kill; a survivor with findings says
-    # "review" (something to look at), a survivor with none says
-    # "passed". The sidecar verdict enum is unchanged.
+    # "needs review", a survivor with none says "passed". The sidecar
+    # verdict enum is unchanged.
     label = verdict if verdict == "kill" else (
+        "needs review" if defects else "passed")
+    chip = verdict if verdict == "kill" else (
         "review" if defects else "passed")
     return """<div class="take %s">
 <video src="%s"%s preload="metadata" muted playsinline controls controlslist="nodownload noremoteplayback"></video>
@@ -252,7 +254,7 @@ def _take_card(t, report_dir):
         verdict, html.escape(rel), poster,
         ("#%d " % rank) if rank else "",
         html.escape(out.get("file") or os.path.basename(t["_clip"])),
-        label, label,
+        chip, label,
         html.escape(" · ".join(stats)),
         _timeline(mech, duration, defects), details)
 

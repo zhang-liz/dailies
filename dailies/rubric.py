@@ -47,6 +47,14 @@ DEFAULT = {
                   "without a driving force.",
         "fail_at": 4,
     },
+    "continuity.objects": {
+        "prompt": "Count the important objects (props, items being "
+                  "handled) in each frame. Report objects that vanish or "
+                  "appear between frames without leaving or entering the "
+                  "frame naturally. An object that disappears entirely is "
+                  "severity 4 or 5.",
+        "fail_at": 4,
+    },
     "environment.stability": {
         "prompt": "Watch the background and setting. Report walls, "
                   "furniture, or scenery that melt, warp, or rearrange "
