@@ -41,7 +41,7 @@ def shot_for(clip, override=None):
 def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
                 vlm_model="qwen3-vl", rubric_path=None, api_key=None,
                 samples=1, calibration=None, strong_endpoint=None,
-                strong_model=None):
+                strong_model=None, prices=None):
     """Run the funnel on one clip and save its sidecar. Returns
     (take, cached): cached is True when the content hash matched an
     existing review and nothing was recomputed."""
@@ -92,6 +92,12 @@ def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
                 r["mechanical"]["kill_reasons"].extend(reasons)
                 r["verdict"] = "kill"
         cached = False
+
+    if prices is not None:
+        # Recomputed even on cached reviews, so a price file supplied
+        # after the fact prices the existing usage without re-judging.
+        from . import cost
+        r["cost"] = cost.block(t, prices)
 
     take.save(clip, t)
     return t, cached

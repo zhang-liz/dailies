@@ -21,6 +21,9 @@ def _vlm_kwargs(args):
     if getattr(args, "calibration", None):
         from . import calibrate
         kwargs["calibration"] = calibrate.load(args.calibration)
+    if getattr(args, "prices", None):
+        from . import cost
+        kwargs["prices"] = cost.load(args.prices)
     return kwargs
 
 
@@ -283,6 +286,10 @@ def main(argv=None):
     rv.add_argument("--force", action="store_true",
                     help="re-review even when the cached take_id matches")
     vlm_flags(rv)
+    rv.add_argument("--prices", metavar="FILE",
+                    help="JSON price file: per-model dollars per million "
+                         "input/output tokens, optional per-clip price; "
+                         "writes review.cost into each sidecar")
     fmt = rv.add_mutually_exclusive_group()
     fmt.add_argument("--json", action="store_true")
     fmt.add_argument("--ndjson", action="store_true",
@@ -408,6 +415,10 @@ def main(argv=None):
     w.add_argument("--report", metavar="FILE",
                    help="rebuild this HTML report after every review")
     vlm_flags(w)
+    w.add_argument("--prices", metavar="FILE",
+                   help="JSON price file: per-model dollars per million "
+                        "input/output tokens, optional per-clip price; "
+                        "writes review.cost into each sidecar")
     w.add_argument("--json", action="store_true",
                    help="emit one JSON line per reviewed take")
     w.add_argument("--on-doomed", metavar="CMD",

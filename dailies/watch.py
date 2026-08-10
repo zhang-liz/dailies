@@ -145,6 +145,11 @@ def run(args):
         if args.on_doomed:
             run_hook(args.on_doomed, shot, worst)
 
+    prices = None
+    if getattr(args, "prices", None):
+        from . import cost
+        prices = cost.load(args.prices)
+
     if not args.json:
         print("watching %s every %gs; ctrl-c to stop"
               % (args.dir, args.interval), flush=True)
@@ -156,7 +161,8 @@ def run(args):
              api_key=os.environ.get("DAILIES_VLM_KEY"),
              samples=args.samples,
              strong_endpoint=args.vlm_strong,
-             strong_model=args.vlm_strong_model)
+             strong_model=args.vlm_strong_model,
+             prices=prices)
     except KeyboardInterrupt:
         pass
     return 0
