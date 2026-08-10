@@ -13,10 +13,10 @@ from dailies import calibrate  # noqa: E402
 from dailies.cli import main  # noqa: E402
 
 
-def sidecar(dirpath, name, label, severities):
+def sidecar(dirpath, name, label, severities, rule="r.x"):
     """Fabricate a gold-labeled, reviewed sidecar; the clip itself is
     never touched by calibration."""
-    defects = [{"t": 1.0, "severity": s, "note": "x", "rule": "r.x"}
+    defects = [{"t": 1.0, "severity": s, "note": "x", "rule": rule}
                for s in severities]
     t = {"take_id": "sha256:%s" % name, "shot": "s", "output":
          {"file": name}, "gold": {"label": label},
@@ -60,6 +60,33 @@ class CalibrateTests(unittest.TestCase):
     def test_no_gold_is_an_error(self):
         with self.assertRaises(RuntimeError):
             calibrate.calibrate(self.dir)
+
+    def test_fit_learns_which_rule_predicts_kills(self):
+        # Rule a.kills fires on every killed take; rule b.noise fires
+        # everywhere. The fitted weight must separate them.
+        for i in range(4):
+            sidecar(self.dir, "k%d.mp4" % i, "kill", [4], rule="a.kills")
+            sidecar(self.dir, "kn%d.mp4" % i, "kill", [4],
+                    rule="a.kills")
+        for i in range(4):
+            sidecar(self.dir, "p%d.mp4" % i, "pass", [4], rule="b.noise")
+        fitted = calibrate.fit(self.dir)
+        self.assertGreater(fitted["weights"]["a.kills"],
+                           fitted["weights"]["b.noise"])
+        self.assertGreaterEqual(fitted["fit_accuracy"], 0.9)
+        # rank_score orders a killing take above a noisy pass.
+        killer = {"review": {"vlm": {"defects": [
+            {"severity": 4, "rule": "a.kills"}]}}}
+        noisy = {"review": {"vlm": {"defects": [
+            {"severity": 4, "rule": "b.noise"}]}}}
+        self.assertGreater(calibrate.rank_score(killer, fitted),
+                           calibrate.rank_score(noisy, fitted))
+        self.assertIsNone(calibrate.rank_score(killer, {}))
+
+    def test_fit_needs_enough_labels(self):
+        sidecar(self.dir, "one.mp4", "kill", [4])
+        with self.assertRaises(RuntimeError):
+            calibrate.fit(self.dir)
 
     def test_cli_writes_calibration_file(self):
         for i, sevs in enumerate([[], [], [1], [2], [4]]):

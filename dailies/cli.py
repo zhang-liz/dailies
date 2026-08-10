@@ -29,10 +29,12 @@ def cmd_review(args):
     if not clips:
         print("no clips found", file=sys.stderr)
         return 1
+    kwargs = _vlm_kwargs(args)
     for clip in clips:
         pipeline.review_clip(clip, shot=args.shot, force=args.force,
-                             **_vlm_kwargs(args))
-    takes = list(pipeline.rerank(clips).values())
+                             **kwargs)
+    takes = list(pipeline.rerank(
+        clips, calibration=kwargs.get("calibration")).values())
 
     kills = [t for t in takes if t["review"]["verdict"] == "kill"]
     if args.json:
@@ -97,6 +99,28 @@ def cmd_calibrate(args):
         print("catches %.0f%% of your %d gold kills"
               % (100 * cal["kill_recall"], cal["n_kill"]))
     print("wrote %s; use it with review --calibration" % args.output)
+    return 0
+
+
+def cmd_fit(args):
+    from . import calibrate
+    fitted = calibrate.fit(args.dir)
+    cal = {}
+    if os.path.exists(args.output):
+        cal = calibrate.load(args.output)
+    cal.update(fitted)
+    calibrate.save(cal, args.output)
+    if args.json:
+        print(json.dumps(cal, indent=2))
+        return 0
+    print("fitted %d rule weights on %d takes, training accuracy %.0f%%"
+          % (len(fitted["weights"]), fitted["n_fit"],
+             100 * fitted["fit_accuracy"]))
+    top = sorted(fitted["weights"].items(), key=lambda kv: -abs(kv[1]))
+    for rule, w in top[:5]:
+        print("  %-24s %+0.3f" % (rule, w))
+    print("wrote %s; review --calibration ranks by your own taste now"
+          % args.output)
     return 0
 
 
@@ -177,6 +201,14 @@ def main(argv=None):
     cal.add_argument("-o", "--output", default="dailies-calibration.json")
     cal.add_argument("--json", action="store_true")
     cal.set_defaults(func=cmd_calibrate)
+
+    ft = sub.add_parser(
+        "fit", help="fit per-rule weights to your own gold verdicts")
+    ft.add_argument("dir", nargs="?", default=".",
+                    help="directory of gold-labeled, reviewed takes")
+    ft.add_argument("-o", "--output", default="dailies-calibration.json")
+    ft.add_argument("--json", action="store_true")
+    ft.set_defaults(func=cmd_fit)
 
     rp = sub.add_parser("report", help="write the static HTML morning report")
     rp.add_argument("dir", nargs="?", default=".",

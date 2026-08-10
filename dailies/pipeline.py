@@ -97,9 +97,11 @@ def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
     return t, cached
 
 
-def rerank(clips):
+def rerank(clips, calibration=None):
     """Recompute rank_in_shot across the sidecars of these clips and save
-    the ones whose rank moved. Returns the loaded takes, clip-keyed."""
+    the ones whose rank moved. Returns the loaded takes, clip-keyed.
+    With fitted weights in the calibration, the user's own learned kill
+    probability leads the ordering."""
     takes = {}
     for clip in clips:
         if os.path.exists(take.sidecar_path(clip)):
@@ -118,7 +120,14 @@ def rerank(clips):
                    + len(m["scene_cuts"]))
         severity = sum(d["severity"] for d in
                        (r.get("vlm") or {}).get("defects", []))
-        return (r["verdict"] == "kill", severity, defects,
+        if calibration is not None:
+            from . import calibrate as calibrate_mod
+            learned = calibrate_mod.rank_score(item[1], calibration)
+        else:
+            learned = None
+        return (r["verdict"] == "kill",
+                learned if learned is not None else 0.0,
+                severity, defects,
                 m["flicker_score"] or 0,
                 -(m.get("motion_smoothness") or 0))
 
