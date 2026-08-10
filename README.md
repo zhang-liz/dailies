@@ -6,9 +6,13 @@ Built so far: stage 1 of the funnel (mechanical, CPU only), stage 2 (VLM screeni
 
 ## One batch, sixty seconds
 
-Four takes from a current video model. The prompt requires a chalkboard sign reading exactly "HAPPY HOUR 5-7PM".
+Four takes from a current video model. The prompt requires a chalkboard sign reading exactly "HAPPY HOUR 5-7PM". Two of them, playable; watch the egg and the sign:
 
-![Four generated bar takes, each with a wrong chalkboard sign](docs/media/bar-batch.jpg)
+https://github.com/zhang-liz/dailies/raw/main/docs/media/bar-take-003.mp4
+
+https://github.com/zhang-liz/dailies/raw/main/docs/media/bar-take-004.mp4
+
+(the other two: [take-001](docs/media/bar-take-001.mp4), [take-002](docs/media/bar-take-002.mp4))
 
 One command judges all four:
 
@@ -24,7 +28,11 @@ reviewed 4 takes, killed 4
         instantly morphs from a white egg into a black chalkboard sign
 ```
 
-No take got the sign right: two read "7-5PM", two "5-5PM". With a price file the report opens with the batch's autopsy: `$0.22: no usable takes`. Tonight's fix is the prompt, not another 40 seeds, and it cost 22 cents to learn that instead of an hour of scrubbing.
+No take got the sign right: two read "7-5PM", two "5-5PM". The morning report, one static HTML file, opens with the batch's autopsy:
+
+[![The bar batch's report: 4 takes, 4 killed, spent $0.22, no usable takes, defects on timelines](docs/media/bar-report.jpg)](https://multimodalsociety.com/assets/tutorial-dailies/shot-02/report)
+
+Click through for the live report: hover to scrub, click a defect dot to jump the clip to that moment. Tonight's fix is the prompt, not another 40 seeds, and it cost 22 cents to learn that instead of an hour of scrubbing.
 
 The same run on an easier batch killed a take at confidence 0.67 (two of three judge samples). We disagreed, recorded the ruling with `dailies gold add`, and `dailies fit` pushed that rule's weight negative: the judge learns whose taste is in charge.
 
