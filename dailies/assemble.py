@@ -26,6 +26,10 @@ SLATE_STYLE = ("fontsize=h/18:fontcolor=white:box=1:boxcolor=black@0.55:"
 _drawtext = None
 
 
+class NothingToCut(RuntimeError):
+    """No surviving takes: nothing-to-do, exit 1, not an error."""
+
+
 def has_drawtext():
     """Whether this ffmpeg build carries drawtext. Builds without
     libfreetype lack it; the cut still assembles, just unslated."""
@@ -145,11 +149,11 @@ def timecode(seconds, fps):
 def assemble(root, output, shots_file=None, alts=0, fps=None, size=None,
              csv_path=None, slate=True):
     """Build the cut and its CSV. Returns a summary dict; raises
-    RuntimeError when nothing survives to cut."""
+    NothingToCut when nothing survives to cut."""
     takes = report.find_takes(root)
     picked = select(takes, alts=alts)
     if not picked:
-        raise RuntimeError("no surviving takes to assemble in %s" % root)
+        raise NothingToCut("no surviving takes to assemble in %s" % root)
     order = shot_order(picked, shots_file)
     segments = [t for shot in order for t in picked[shot]]
 

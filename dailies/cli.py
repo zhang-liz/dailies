@@ -226,10 +226,16 @@ def cmd_assemble(args):
         except ValueError:
             print("bad --scale %r, want WxH" % args.scale, file=sys.stderr)
             return 2
-    result = assemble.assemble(
-        args.dir, args.output, shots_file=args.shots, alts=args.alts,
-        fps=args.fps, size=size, csv_path=args.csv,
-        slate=not args.no_slate)
+    try:
+        result = assemble.assemble(
+            args.dir, args.output, shots_file=args.shots, alts=args.alts,
+            fps=args.fps, size=size, csv_path=args.csv,
+            slate=not args.no_slate)
+    except assemble.NothingToCut as e:
+        # Nothing-to-do is exit 1, per the README table; 2 stays for
+        # errors.
+        print(str(e), file=sys.stderr)
+        return 1
     if args.json:
         json.dump(result, sys.stdout, indent=2)
         print()

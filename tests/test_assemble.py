@@ -127,11 +127,11 @@ class AssembleTests(unittest.TestCase):
         out = assemble.drawtext_escape("shot's cut: a,b")
         self.assertEqual(out, "shot\\'s cut\\: a\\,b")
 
-    def test_empty_dir_errors_cleanly(self):
+    def test_empty_dir_is_nothing_to_do_exit_1(self):
         empty = tempfile.mkdtemp(prefix="dailies-assemble-empty-")
         self.addCleanup(shutil.rmtree, empty)
         rc = main(["assemble", empty, "-o", self.cut])
-        self.assertEqual(rc, 2)
+        self.assertEqual(rc, 1)
         self.assertFalse(os.path.exists(self.cut))
 
 

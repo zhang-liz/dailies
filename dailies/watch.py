@@ -297,8 +297,9 @@ def run_hook(cmd, shot, sidecar):
 def run(args):
     """CLI entry: watch until interrupted."""
     if not os.path.isdir(args.dir):
+        # Bad usage is exit 2, per the README table.
         print("not a directory: %s" % args.dir, file=sys.stderr)
-        return 1
+        return 2
     try:
         want = parse_want(args.want)
     except ValueError as e:
