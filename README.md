@@ -83,6 +83,33 @@ New clips are reviewed as they land (after a settle period so half-written files
 
 Each clip gets a `<clip>.take.json` sidecar: content-hash take id, probe info, black/freeze spans, scene cuts, flicker score (motion-masked, so intended action does not read as flicker), motion smoothness (interpolation-reconstruction, the VBench construct on plain ffmpeg), candidate frames for the VLM stage, verdict (`kill` or `review`), rank within the shot. Reviews are cached by content hash; `--force` re-runs. Sidecar blocks owned by other tools (slate's `recipe`) are preserved.
 
+## Machine interface
+
+Every command takes `--json`. For orchestrators that act per take instead of per batch:
+
+```sh
+dailies review ./takes --ndjson                  # stream, don't buffer
+dailies verdict shot-07/take-031.mp4 --vlm URL   # one clip, one decision
+dailies schema take                              # the published contract
+```
+
+`review --ndjson` prints one JSON line per clip as it is reviewed, then a final summary line (`{"reviewed": N, "killed": K}`). Per-clip lines share one shape with `watch --json` and `verdict`: `clip`, `shot`, `verdict`, `rank_in_shot`, `kill_reasons`. The summary line has no `clip` key; that is how consumers tell them apart.
+
+`verdict` reviews a single clip under the usual flags (`--vlm`, `--rubric`, `--samples`, `--calibration`), prints that same line, and answers in the exit code, so a regen loop or shell `if` can branch without parsing.
+
+`schema` prints JSON Schema documents checked into `dailies/schemas/` and shipped with the package: `take` (the sidecar, see [SPEC.md](SPEC.md)), `calibration`, `judge-history`.
+
+### Exit codes
+
+| code | meaning |
+|------|---------|
+| 0 | success; for `verdict`, the take is keep or review |
+| 1 | nothing to do or a check failed: no clips found, calibration lacks gold, kappa under `--fail-below` |
+| 2 | error: bad usage, ffmpeg or ffprobe missing, VLM endpoint failure |
+| 3 | `verdict` only: the take is a kill |
+
+3 is deliberately clear of the shell's conventional 1 (generic failure) and 2 (usage error), so a kill is never confused with a crash.
+
 ## Tests
 
 ```sh
