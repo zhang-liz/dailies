@@ -124,6 +124,36 @@ def cmd_fit(args):
     return 0
 
 
+def cmd_judge_check(args):
+    from . import judgecheck, rubric
+    if not args.vlm:
+        print("judge-check needs --vlm", file=sys.stderr)
+        return 2
+    kwargs = _vlm_kwargs(args)
+    kwargs.pop("rubric_path", None)
+    record = judgecheck.run(args.dir, rubric.load(args.rubric),
+                            history_path=args.history, **kwargs)
+    previous = record.pop("previous", None)
+    if args.json:
+        print(json.dumps(record, indent=2))
+    else:
+        print("judge %s on %d gold takes: agreement %.0f%%, "
+              "kappa %.2f" % (record["engine"], record["n"],
+                              100 * record["agreement"],
+                              record["kappa"]))
+        print("  %d false kills, %d missed kills"
+              % (record["false_kills"], record["missed_kills"]))
+        if previous:
+            print("  last run (%s, %s): agreement %.0f%%, kappa %.2f"
+                  % (previous["engine"], previous["created"],
+                     100 * previous["agreement"], previous["kappa"]))
+    if args.fail_below is not None and record["kappa"] < args.fail_below:
+        print("kappa %.2f below --fail-below %s" % (
+            record["kappa"], args.fail_below), file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_report(args):
     from . import report
     out = report.build(args.dir, args.output)
@@ -209,6 +239,20 @@ def main(argv=None):
     ft.add_argument("-o", "--output", default="dailies-calibration.json")
     ft.add_argument("--json", action="store_true")
     ft.set_defaults(func=cmd_fit)
+
+    jc = sub.add_parser(
+        "judge-check",
+        help="re-judge the gold set and report agreement drift")
+    jc.add_argument("dir", nargs="?", default=".",
+                    help="directory of gold-labeled takes")
+    vlm_flags(jc)
+    jc.add_argument("--history", default="dailies-judge-check.json",
+                    help="run history file (default "
+                         "dailies-judge-check.json)")
+    jc.add_argument("--fail-below", type=float, metavar="KAPPA",
+                    help="exit 1 when kappa lands below this")
+    jc.add_argument("--json", action="store_true")
+    jc.set_defaults(func=cmd_judge_check)
 
     rp = sub.add_parser("report", help="write the static HTML morning report")
     rp.add_argument("dir", nargs="?", default=".",
