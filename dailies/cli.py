@@ -245,6 +245,36 @@ def cmd_assemble(args):
     return 0
 
 
+def cmd_regen(args):
+    """One kill in, one driver job out; --wait blocks until the driver
+    lands the clip, for shells without their own poll loop."""
+    from . import regen
+    if not os.path.isfile(args.clip):
+        print("not a file: %s" % args.clip, file=sys.stderr)
+        return 2
+    job = regen.resubmit(args.driver, args.clip, out_dir=args.out_dir,
+                         shot=args.shot)
+    if args.wait:
+        status = regen.wait(args.driver, job["job"],
+                            interval=args.interval,
+                            timeout=args.timeout)
+        job["state"] = status["state"]
+        for key in ("output", "error"):
+            if status.get(key):
+                job[key] = status[key]
+    if args.json:
+        json.dump(job, sys.stdout, indent=2)
+        print()
+    else:
+        print("submitted job %s; new take lands at %s"
+              % (job["job"], job["clip"]))
+        if job.get("state"):
+            print("driver finished: %s %s"
+                  % (job["state"],
+                     job.get("output") or job.get("error") or ""))
+    return 1 if job.get("state") == "error" else 0
+
+
 def cmd_watch(args):
     from . import watch
     return watch.run(args)
@@ -408,6 +438,34 @@ def main(argv=None):
                      help="skip the burned-in per-take slate")
     asm.add_argument("--json", action="store_true")
     asm.set_defaults(func=cmd_assemble)
+
+    rg = sub.add_parser(
+        "regen",
+        help="resubmit a failed take through a driver executable "
+             "with a fresh seed")
+    rg.add_argument("clip", help="the failed take's clip file")
+    rg.add_argument("--driver", required=True, metavar="CMD",
+                    help="driver command honoring the docs/DRIVERS.md "
+                         "contract: CMD submit reads a job JSON on "
+                         "stdin and prints a job id; CMD poll ID "
+                         "prints a status JSON")
+    rg.add_argument("--out-dir", metavar="DIR",
+                    help="directory where the new clip lands "
+                         "(default: next to the failed clip)")
+    rg.add_argument("--shot",
+                    help="shot id for the new take (default: "
+                         "inherited from the failed take)")
+    rg.add_argument("--wait", action="store_true",
+                    help="poll the driver until the job finishes; "
+                         "exit 1 when it ends in error")
+    rg.add_argument("--interval", type=float, default=2.0,
+                    help="seconds between polls with --wait "
+                         "(default 2)")
+    rg.add_argument("--timeout", type=float, default=600.0,
+                    help="give up on --wait after this many seconds "
+                         "(default 600)")
+    rg.add_argument("--json", action="store_true")
+    rg.set_defaults(func=cmd_regen)
 
     w = sub.add_parser(
         "watch", help="review takes as they land in a directory")

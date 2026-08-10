@@ -4,6 +4,7 @@ of polls, copies a synthetic clip into the requested destination.
 Anything the fake driver can get wrong, a live one can too, so the
 contract violations are each pinned."""
 
+import io
 import json
 import glob
 import os
@@ -12,10 +13,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from dailies import pipeline, regen, take  # noqa: E402
+from dailies.cli import main  # noqa: E402
 
 FFMPEG = shutil.which("ffmpeg")
 
@@ -274,6 +277,60 @@ class FakeDriverTests(unittest.TestCase):
                                      "recipe": {}})
         with self.assertRaises(regen.DriverError):
             regen.wait(stalled, jid, interval=0.05, timeout=0.3)
+
+
+class RegenCliTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="dailies-regen-cli-")
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.spool = os.path.join(self.dir, "spool")
+        os.makedirs(self.spool)
+        self.src = os.path.join(self.dir, "src.mp4")
+        with open(self.src, "wb") as f:
+            f.write(b"fresh pixels")
+        self.driver = write_driver(self.dir, self.spool, self.src)
+
+    def test_wait_json_lands_clip_and_reports_done(self):
+        failed, parent = make_failed(self.dir)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = main(["regen", failed, "--driver", self.driver,
+                       "--wait", "--interval", "0.05", "--json"])
+        self.assertEqual(rc, 0)
+        doc = json.loads(out.getvalue())
+        self.assertEqual(doc["state"], "done")
+        self.assertEqual(doc["output"], doc["clip"])
+        self.assertEqual(doc["parent"], parent["take_id"])
+        self.assertNotEqual(doc["recipe"]["seeds"]["3"], 424242)
+        self.assertTrue(os.path.exists(doc["output"]))
+        self.assertEqual(take.load(doc["clip"])["regen"]["job"],
+                         doc["job"])
+
+    def test_out_dir_and_shot_flags(self):
+        failed, _ = make_failed(self.dir)
+        target = os.path.join(self.dir, "landing")
+        os.makedirs(target)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = main(["regen", failed, "--driver", self.driver,
+                       "--out-dir", target, "--shot", "shot-99",
+                       "--json"])
+        self.assertEqual(rc, 0)
+        doc = json.loads(out.getvalue())
+        self.assertEqual(os.path.dirname(doc["clip"]), target)
+        self.assertEqual(take.load(doc["clip"])["shot"], "shot-99")
+
+    def test_missing_clip_exits_2(self):
+        rc = main(["regen", os.path.join(self.dir, "no-such.mp4"),
+                   "--driver", self.driver])
+        self.assertEqual(rc, 2)
+
+    def test_broken_driver_exits_2(self):
+        failed, _ = make_failed(self.dir)
+        bad = write_bad_driver(self.dir, "dies.py",
+                               "import sys\nsys.exit(1)\n")
+        rc = main(["regen", failed, "--driver", bad])
+        self.assertEqual(rc, 2)
 
 
 @unittest.skipUnless(FFMPEG, "ffmpeg not on PATH")
