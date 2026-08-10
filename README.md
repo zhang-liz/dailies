@@ -90,6 +90,8 @@ dailies watch ~/ComfyUI/output --report report.html --vlm http://localhost:8000/
 
 New clips are reviewed as they land (after a settle period so half-written files are left alone), ranks update per shot, and the report is rebuilt after every take, so the morning report exists by morning. Restarting the watcher skips everything already reviewed. Same flags as `review`; `--json` emits one JSON line per take for piping into anything else.
 
+The watcher also runs a doomed-shot circuit breaker: a Beta posterior on each shot's mechanical-kill fraction (mechanical stats only, zero VLM cost) flags a shot as doomed when the posterior puts usable yield below a floor. Eight straight mechanical kills decide fast; one passing take buys several more. Doomed shots are badged in the report header, marked `"shot_doomed"` in `--json` lines (plus one `"event": "doomed"` line when a shot trips), and `--on-doomed CMD` runs `CMD SHOT WORST_SIDECAR` once per shot, for cancelling a queue or paging yourself. Without the hook the flag is report-only, on purpose: it catches only mechanically doomed prompts, and a shot can pass mechanics and still die at the VLM stage.
+
 Each clip gets a `<clip>.take.json` sidecar: content-hash take id, probe info, black/freeze spans, scene cuts, flicker score (motion-masked, so intended action does not read as flicker), motion smoothness (interpolation-reconstruction, the VBench construct on plain ffmpeg), candidate frames for the VLM stage, verdict (`kill` or `review`), rank within the shot. Reviews are cached by content hash; `--force` re-runs. Sidecar blocks owned by other tools (slate's `recipe`) are preserved.
 
 ## Machine interface
