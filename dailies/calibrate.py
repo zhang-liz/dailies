@@ -71,6 +71,82 @@ def calibrate(root, alpha=DEFAULT_ALPHA):
     return out
 
 
+def _rule_features(take, rule_names):
+    """Per-rule evidence vector for one take: max severity times
+    confidence of that rule's defects, scaled to 0..1."""
+    per = {}
+    defects = ((take.get("review") or {}).get("vlm") or {}).get(
+        "defects") or []
+    for d in defects:
+        s = d["severity"] * (d.get("confidence") or 1.0)
+        if s > per.get(d["rule"], 0.0):
+            per[d["rule"]] = s
+    return [per.get(r, 0.0) / 5.0 for r in rule_names]
+
+
+def _sigmoid(z):
+    if z < -60:
+        return 0.0
+    if z > 60:
+        return 1.0
+    return 1.0 / (1.0 + math.exp(-z))
+
+
+def fit(root, iters=2000, lr=0.5, l2=1e-3):
+    """Fit per-rule weights to the user's own verdicts: logistic
+    regression from rule evidence to the gold kill label, plain
+    gradient descent, deterministic (zero init). The judge has fixed
+    opinions; the user's history says which rules actually predict
+    their kills (EvalCrafter's calibration step, arXiv:2310.11440)."""
+    data = [(t["gold"]["label"] == "kill", t)
+            for _, t in gold.collect(root)
+            if ((t.get("review") or {}).get("vlm"))]
+    if len(data) < 4:
+        raise RuntimeError(
+            "need at least 4 gold-labeled takes with VLM reviews to "
+            "fit; have %d" % len(data))
+    rule_names = sorted({d["rule"] for _, t in data
+                         for d in t["review"]["vlm"]["defects"]})
+    if not rule_names:
+        raise RuntimeError("no defects in the gold set; nothing to fit")
+    X = [_rule_features(t, rule_names) for _, t in data]
+    y = [1.0 if killed else 0.0 for killed, _ in data]
+    n, m = len(X), len(rule_names)
+    w, b = [0.0] * m, 0.0
+    for _ in range(iters):
+        gw, gb = [0.0] * m, 0.0
+        for xi, yi in zip(X, y):
+            err = _sigmoid(b + sum(wj * xj for wj, xj in zip(w, xi))) - yi
+            gb += err
+            for j in range(m):
+                gw[j] += err * xi[j]
+        b -= lr * gb / n
+        for j in range(m):
+            w[j] -= lr * (gw[j] / n + l2 * w[j])
+    correct = sum(
+        1 for xi, yi in zip(X, y)
+        if (_sigmoid(b + sum(wj * xj for wj, xj in zip(w, xi))) >= 0.5)
+        == (yi == 1.0))
+    return {
+        "weights": {r: round(wj, 4) for r, wj in zip(rule_names, w)},
+        "bias": round(b, 4),
+        "n_fit": n,
+        "fit_accuracy": round(correct / n, 3),
+    }
+
+
+def rank_score(take, calibration):
+    """Learned kill probability for ranking, or None without weights."""
+    weights = (calibration or {}).get("weights")
+    if not weights:
+        return None
+    rule_names = sorted(weights)
+    x = _rule_features(take, rule_names)
+    z = calibration.get("bias", 0.0) + sum(
+        weights[r] * xi for r, xi in zip(rule_names, x))
+    return _sigmoid(z)
+
+
 def save(calibration, path):
     with open(path, "w") as f:
         json.dump(calibration, f, indent=2)
