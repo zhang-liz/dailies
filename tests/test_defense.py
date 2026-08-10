@@ -249,6 +249,7 @@ class PipelineDefenseBase(unittest.TestCase):
 
     def review(self, **kwargs):
         kwargs.setdefault("vlm_endpoint", self.endpoint)
+        kwargs.setdefault("audit_rate", 0)
         t, _ = pipeline.review_clip(self.clip, **kwargs)
         return t
 
@@ -361,6 +362,37 @@ class ScrutinyTests(PipelineDefenseBase):
         t = self.review()
         self.assertEqual(t["review"]["scrutiny"]["scrutinized"],
                          ["anatomy.hands", "artifact.morphing"])
+
+
+class AuditPipelineTests(PipelineDefenseBase):
+    def test_rate_one_badges_every_passing_regen_take(self):
+        parent = self.write_parent(
+            reasons=["black for 1.0s from 0.0s"])
+        self.prep_child(parent["take_id"])
+        t = self.review(audit_rate=1.0)
+        r = t["review"]
+        self.assertEqual(r["audit"], {"rate": 1.0})
+        self.assertEqual(r["verdict"], "review")
+
+    def test_rate_zero_and_first_generation_stay_unbadged(self):
+        parent = self.write_parent(
+            reasons=["black for 1.0s from 0.0s"])
+        self.prep_child(parent["take_id"])
+        t = self.review(audit_rate=0)
+        self.assertNotIn("audit", t["review"])
+        os.unlink(take.sidecar_path(self.clip))
+        self.prep_child(None)
+        t = self.review(audit_rate=1.0, force=True)
+        self.assertNotIn("audit", t["review"])
+
+    def test_killed_regen_takes_are_never_audited(self):
+        parent = self.write_parent(reasons=[HANDS])
+        self.prep_child(parent["take_id"])
+        self.handler.yes = ("anatomy.hands",)
+        self.handler.sampled_only = True
+        t = self.review(audit_rate=1.0)
+        self.assertEqual(t["review"]["verdict"], "kill")
+        self.assertNotIn("audit", t["review"])
 
 
 class JudgeGateTests(unittest.TestCase):

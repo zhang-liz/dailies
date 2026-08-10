@@ -501,6 +501,11 @@ def main(argv=None):
     w.add_argument("--regen-rate", type=int, default=6, metavar="N",
                    help="max driver submissions per minute across all "
                         "shots (default 6)")
+    w.add_argument("--audit-rate", type=float, metavar="F",
+                   help="fraction of passing regen takes routed to the "
+                        "review pile with an audit badge, chosen by "
+                        "take hash so re-reviews agree (default 0.15; "
+                        "0 disables)")
     w.set_defaults(func=cmd_watch)
 
     args = p.parse_args(argv)
