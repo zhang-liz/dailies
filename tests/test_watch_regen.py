@@ -426,6 +426,26 @@ class JudgeGateTests(unittest.TestCase):
 
 
 class ReconcileOnStartTests(RegenBase):
+    def test_orphan_stub_adopted_and_settled_on_startup(self):
+        # Crash after driver submit, before record_submit: the job id
+        # lives only in the stub sidecar. Startup adopts it, and the
+        # landed clip settles it without polling.
+        clip = os.path.join(self.dir, "a-regen-01.mp4")
+        with open(clip, "wb") as f:
+            f.write(b"landed")
+        t = take.load(clip)
+        t.update({"parent": "sha256:%064x" % 1, "shot": "shot-07",
+                  "recipe": {"seeds": {"3": 7}},
+                  "regen": {"driver": "/no/such/driver",
+                            "job": "j-lost",
+                            "submitted": "2026-08-09T00:00:00Z"}})
+        take.save(clip, t)
+        watch.Regenerator("/no/such/driver", self.ledger_path)
+        job = ledger.load(self.ledger_path)["jobs"]["j-lost"]
+        self.assertEqual((job["clip"], job["shot"], job["state"]),
+                         (clip, "shot-07", "done"))
+        self.assertTrue(job["resolved"])
+
     def test_landed_pending_job_settles_without_polling(self):
         landed = os.path.join(self.dir, "landed.mp4")
         with open(landed, "wb") as f:

@@ -160,8 +160,12 @@ class Regenerator:
         if want:
             self.led["want"].update(want)
         if not dry_run:
-            # Restart recovery: settle jobs a crashed run left pending,
-            # filesystem first, driver poll second.
+            # Restart recovery: adopt jobs a crash left only in stub
+            # sidecars, then settle everything pending, filesystem
+            # first, driver poll second.
+            ledger.adopt_stubs(
+                self.led,
+                os.path.dirname(os.path.abspath(ledger_path)) or ".")
             if any(j["state"] not in regen.TERMINAL
                    for j in self.led["jobs"].values()):
                 ledger.reconcile(self.led)
