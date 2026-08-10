@@ -1,5 +1,10 @@
 # dailies
 
+[![Tests](https://github.com/zhang-liz/dailies/actions/workflows/tests.yml/badge.svg)](https://github.com/zhang-liz/dailies/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/video-dailies)](https://pypi.org/project/video-dailies/)
+[![Python](https://img.shields.io/pypi/pyversions/video-dailies)](https://pypi.org/project/video-dailies/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 **A command-line tool and agent skill that triage batches of AI-generated video takes.** It kills the dead ones with timestamped evidence, ranks the survivors, and writes one HTML morning report. Python 3.9+ and ffmpeg, zero other dependencies. Run it yourself from the shell, or let the bundled Claude Code skill run the whole morning for you.
 
 ```sh
@@ -74,6 +79,8 @@ Automated judgment of generated video tops out well below human agreement, and v
 - [SPEC.md](SPEC.md): the take.json sidecar contract
 - [docs/DRIVERS.md](docs/DRIVERS.md): the regen driver contract
 - [docs/ROADMAP.md](docs/ROADMAP.md): what ships next
+- [CHANGELOG.md](CHANGELOG.md): what changed per release
+- [CONTRIBUTING.md](CONTRIBUTING.md): ground rules and setup
 - [The tutorial](https://multimodalsociety.com/blog/overnight-dailies): a worked morning, with footage
 
 ## Tests
