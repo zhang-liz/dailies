@@ -149,11 +149,26 @@ def scene_cuts(path):
     return [float(f["pts_time"]) for f in frames if "pts_time" in f]
 
 
+MOTION_MASK_RATIO = 2.0
+
+
 def flicker_score(series):
-    """Mean absolute frame-to-frame luma change, normalized to 0..1."""
+    """Mean absolute frame-to-frame luma change, normalized to 0..1.
+
+    Frames whose YDIF is well above the clip's median carry genuine
+    motion, and intended action is not flicker; they are masked out
+    (VBench masks motion regions for the same reason). A clip that
+    flickers throughout raises its own median, so nothing is masked
+    and the flicker still counts."""
     if len(series) < 2:
         return 0.0
-    diffs = [abs(series[i][1] - series[i - 1][1]) for i in range(1, len(series))]
+    ydifs = sorted(f[2] for f in series[1:])
+    cap = ydifs[len(ydifs) // 2] * MOTION_MASK_RATIO
+    diffs = [abs(series[i][1] - series[i - 1][1])
+             for i in range(1, len(series)) if series[i][2] <= cap]
+    if not diffs:
+        diffs = [abs(series[i][1] - series[i - 1][1])
+                 for i in range(1, len(series))]
     return round(statistics.mean(diffs) / 255.0, 4)
 
 
