@@ -146,7 +146,7 @@ def assemble(root, output, shots_file=None, alts=0, fps=None, size=None,
              csv_path=None, slate=True):
     """Build the cut and its CSV. Returns a summary dict; raises
     RuntimeError when nothing survives to cut."""
-    takes = report._find_takes(root)
+    takes = report.find_takes(root)
     picked = select(takes, alts=alts)
     if not picked:
         raise RuntimeError("no surviving takes to assemble in %s" % root)
