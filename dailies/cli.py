@@ -501,6 +501,14 @@ def main(argv=None):
     w.add_argument("--regen-rate", type=int, default=6, metavar="N",
                    help="max driver submissions per minute across all "
                         "shots (default 6)")
+    w.add_argument("--min-kappa", type=float, default=0.6, metavar="K",
+                   help="lowest last judge-check kappa --regen will "
+                        "start on (default 0.6); the history is read "
+                        "from DIR or the working directory")
+    w.add_argument("--allow-unchecked-judge", action="store_true",
+                   help="start --regen without a healthy judge-check "
+                        "history; the loop then optimizes against an "
+                        "unmeasured judge")
     w.add_argument("--audit-rate", type=float, metavar="F",
                    help="fraction of passing regen takes routed to the "
                         "review pile with an audit badge, chosen by "

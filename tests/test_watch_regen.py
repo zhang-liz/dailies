@@ -304,6 +304,59 @@ class CliUsageTests(unittest.TestCase):
                                "--want", "shot-07=zero"]), 2)
 
 
+class JudgeGateTests(unittest.TestCase):
+    # The regen-to-green defense at the door: no healthy judge-check
+    # history, no unattended loop.
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="dailies-watch-gate-")
+        self.addCleanup(shutil.rmtree, self.dir)
+
+    def history(self, kappa):
+        path = os.path.join(self.dir, "dailies-judge-check.json")
+        with open(path, "w") as f:
+            json.dump({"runs": [{"kappa": kappa,
+                                 "created": "2026-08-08T00:00:00Z"}]}, f)
+
+    def gate_args(self, **over):
+        ns = dict(regen="drv", dry_run=False,
+                  allow_unchecked_judge=False, dir=self.dir,
+                  min_kappa=0.6)
+        ns.update(over)
+        import argparse
+        return argparse.Namespace(**ns)
+
+    def test_no_history_refuses_with_exit_2(self):
+        self.assertEqual(main(["watch", self.dir, "--regen", "drv"]), 2)
+
+    def test_low_kappa_refuses_with_exit_2(self):
+        self.history(0.3)
+        self.assertEqual(main(["watch", self.dir, "--regen", "drv"]), 2)
+
+    def test_healthy_kappa_opens_the_gate(self):
+        self.history(0.8)
+        self.assertIsNone(watch.judge_gate_error(self.gate_args()))
+
+    def test_min_kappa_flag_raises_the_floor(self):
+        self.history(0.8)
+        why = watch.judge_gate_error(self.gate_args(min_kappa=0.9))
+        self.assertIn("0.80", why)
+        self.assertIn("0.90", why)
+
+    def test_override_and_dry_run_skip_the_gate(self):
+        self.assertIsNone(watch.judge_gate_error(
+            self.gate_args(allow_unchecked_judge=True)))
+        self.assertIsNone(watch.judge_gate_error(
+            self.gate_args(dry_run=True)))
+        self.assertIsNone(watch.judge_gate_error(
+            self.gate_args(regen=None)))
+
+    def test_refusal_names_the_fix(self):
+        why = watch.judge_gate_error(self.gate_args())
+        self.assertIn("dailies judge-check", why)
+        self.assertIn("--allow-unchecked-judge", why)
+
+
 class ReconcileOnStartTests(RegenBase):
     def test_landed_pending_job_settles_without_polling(self):
         landed = os.path.join(self.dir, "landed.mp4")

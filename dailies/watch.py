@@ -221,6 +221,23 @@ class Regenerator:
         return event
 
 
+def judge_gate_error(args):
+    """The refusal that stops watch --regen on an unmeasured judge, or
+    None when the loop may start. A dry run submits nothing, so only a
+    live loop needs the gate; --allow-unchecked-judge is the explicit
+    override. The history is looked for in the watched directory first,
+    then the working directory, where judge-check writes by default."""
+    if not args.regen or args.dry_run or args.allow_unchecked_judge:
+        return None
+    from . import defense, judgecheck
+    paths = [os.path.join(args.dir, judgecheck.HISTORY),
+             judgecheck.HISTORY]
+    if os.path.abspath(paths[0]) == os.path.abspath(paths[1]):
+        paths = paths[:1]
+    ok, why = defense.judge_gate(paths, min_kappa=args.min_kappa)
+    return None if ok else why
+
+
 def run_hook(cmd, shot, sidecar):
     """Fire and forget: a hook that hangs must never stall review."""
     try:
@@ -243,6 +260,10 @@ def run(args):
         print("%s needs --regen"
               % ("--dry-run" if args.dry_run else "--want"),
               file=sys.stderr)
+        return 2
+    gate = judge_gate_error(args)
+    if gate:
+        print("refusing to start --regen: %s" % gate, file=sys.stderr)
         return 2
 
     def emit(t, clip):
