@@ -83,6 +83,13 @@
             }
           }
         },
+        "scrutiny": {
+          "description": "Harder re-judging of a passing regen take on its ancestors' killing rules; same shape as vlm, plus the scrutinized rule names.",
+          "type": ["object", "null"],
+          "properties": {
+            "scrutinized": { "type": "array", "items": { "type": "string" } }
+          }
+        },
         "verdict": { "enum": ["keep", "kill", "review"] },
         "rank_in_shot": { "type": ["integer", "null"] }
       }

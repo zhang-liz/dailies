@@ -276,6 +276,93 @@ class IntentGuardPipelineTests(PipelineDefenseBase):
         self.assertNotIn("root_prompt", t["review"]["vlm"])
 
 
+class ScrutinyTests(PipelineDefenseBase):
+    def sampled(self):
+        return [r for r in self.handler.requests
+                if r.get("temperature", 0) > 0]
+
+    def test_kills_what_one_cheap_ask_missed(self):
+        parent = self.write_parent(reasons=[HANDS])
+        self.prep_child(parent["take_id"])
+        self.handler.yes = ("anatomy.hands",)
+        self.handler.sampled_only = True
+        t = self.review()
+        r = t["review"]
+        self.assertEqual(r["verdict"], "kill")
+        self.assertEqual(r["scrutiny"]["scrutinized"], ["anatomy.hands"])
+        defects = r["scrutiny"]["defects"]
+        self.assertEqual(defects[0]["confidence"], 1.0)
+        # Only the parent-killing rule was re-asked, three times.
+        self.assertEqual(len(self.sampled()), 3)
+        self.assertTrue(all("anatomy.hands" in s for s in
+                            request_texts(self.sampled())))
+        reason = [k for k in r["mechanical"]["kill_reasons"]
+                  if "anatomy.hands" in k]
+        self.assertEqual(len(reason), 1)
+        # The reason reads like any rule kill, so futility counts it.
+        from dailies import brief
+        self.assertEqual(brief.kill_class(reason[0]),
+                         ("rule", "anatomy.hands"))
+
+    def test_a_clean_pass_still_records_the_block(self):
+        parent = self.write_parent(reasons=[HANDS])
+        self.prep_child(parent["take_id"])
+        t = self.review()
+        r = t["review"]
+        self.assertEqual(r["verdict"], "review")
+        self.assertEqual(r["scrutiny"]["defects"], [])
+        self.assertEqual(r["scrutiny"]["scrutinized"],
+                         ["anatomy.hands"])
+        self.assertEqual(r["mechanical"]["kill_reasons"], [])
+        # Cached re-review does not re-scrutinize.
+        count = len(self.handler.requests)
+        self.review()
+        self.assertEqual(len(self.handler.requests), count)
+
+    def test_every_scrutinized_rule_escalates_to_the_strong_judge(self):
+        class StrongStub(StubJudge):
+            requests = []
+            yes = ("anatomy.hands",)
+            sampled_only = False
+        strong = ThreadingHTTPServer(("127.0.0.1", 0), StrongStub)
+        threading.Thread(target=strong.serve_forever,
+                         daemon=True).start()
+        self.addCleanup(strong.shutdown)
+        parent = self.write_parent(reasons=[HANDS])
+        self.prep_child(parent["take_id"])
+        # The cheap judge is confidently wrong: no on every ask. The
+        # strong judge must still be asked, and its yes must kill.
+        t = self.review(
+            strong_endpoint="http://127.0.0.1:%d/v1"
+                            % strong.server_port,
+            strong_model="big-vlm")
+        r = t["review"]
+        s = r["scrutiny"]
+        self.assertEqual(s["escalated"], ["anatomy.hands"])
+        self.assertEqual(s["strong_engine"], "big-vlm")
+        self.assertEqual(len(StrongStub.requests), 1)
+        self.assertIn("anatomy.hands",
+                      request_texts(StrongStub.requests)[0])
+        self.assertEqual(r["verdict"], "kill")
+
+    def test_mechanically_killed_parent_needs_no_scrutiny(self):
+        parent = self.write_parent(
+            reasons=["black for 1.0s from 0.0s"])
+        self.prep_child(parent["take_id"])
+        t = self.review()
+        self.assertNotIn("scrutiny", t["review"])
+        self.assertEqual(self.sampled(), [])
+
+    def test_rules_collect_across_the_whole_chain(self):
+        gp = self.write_parent(ident=8, reasons=[HANDS])
+        parent = self.write_parent(ident=9, reasons=[MORPH],
+                                   parent=gp["take_id"])
+        self.prep_child(parent["take_id"])
+        t = self.review()
+        self.assertEqual(t["review"]["scrutiny"]["scrutinized"],
+                         ["anatomy.hands", "artifact.morphing"])
+
+
 class JudgeGateTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="dailies-gate-")
