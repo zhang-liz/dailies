@@ -184,7 +184,11 @@ def cmd_judge_check(args):
 def cmd_report(args):
     from . import report
     out = report.build(args.dir, args.output)
-    print(json.dumps({"report": out}) if args.json else out)
+    if args.json:
+        print(json.dumps({"report": out,
+                          "cost": report.cost_summary(args.dir)}))
+    else:
+        print(out)
     return 0
 
 

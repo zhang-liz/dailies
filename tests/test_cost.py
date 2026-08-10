@@ -1,6 +1,8 @@
 """Cost telemetry tests: usage recording against a stub endpoint that
 bills every request a fixed token count."""
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -303,6 +305,83 @@ class PriceTests(StubEndpointCase):
             rc = main(["watch", self.dir, "--prices", path])
         self.assertEqual(rc, 0)
         self.assertEqual(loop.call_args[1]["prices"]["clip"], 0.25)
+
+
+@unittest.skipUnless(FFMPEG, "ffmpeg not on PATH")
+class ReportCostTests(unittest.TestCase):
+    """Report math over fabricated cost blocks: one survivor at $0.30,
+    one kill at $0.20, so the night costs $0.50 per usable take."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="dailies-cost-report-")
+        self.addCleanup(shutil.rmtree, self.dir)
+        shot = os.path.join(self.dir, "shot-01")
+        os.makedirs(shot)
+        self.good = os.path.join(shot, "good.mp4")
+        self.dead = os.path.join(shot, "dead.mp4")
+        for clip, lavfi in ((self.good, "testsrc2=size=320x240:rate=8"),
+                            (self.dead, "color=c=black:size=320x240:"
+                                        "rate=8")):
+            subprocess.run(
+                ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+                 "-i", lavfi, "-t", "1", "-pix_fmt", "yuv420p", clip],
+                check=True)
+        main(["review", self.dir])
+        for clip, usd in ((self.good, 0.30), (self.dead, 0.20)):
+            t = take.load(clip)
+            t["review"]["cost"] = {"vlm_usd": 0.0, "clip_usd": usd,
+                                   "total_usd": usd}
+            take.save(clip, t)
+
+    def _page(self):
+        out = os.path.join(self.dir, "report.html")
+        self.assertEqual(main(["report", self.dir, "-o", out]), 0)
+        return open(out).read()
+
+    def _json(self):
+        buf = io.StringIO()
+        out = os.path.join(self.dir, "report.html")
+        with contextlib.redirect_stdout(buf):
+            main(["report", self.dir, "-o", out, "--json"])
+        return json.loads(buf.getvalue())
+
+    def test_header_ends_in_dollars_per_usable_take(self):
+        page = self._page()
+        self.assertIn("Spent $0.50: $0.50 per usable take.", page)
+
+    def test_shot_heading_and_take_cards_show_cost(self):
+        page = self._page()
+        self.assertIn("shot-01 · 2 takes · 1 killed · spent $0.50: "
+                      "$0.50 per usable take", page)
+        self.assertIn("$0.30", page)
+        self.assertIn("$0.20", page)
+
+    def test_json_carries_the_same_numbers(self):
+        cost = self._json()["cost"]
+        self.assertEqual(cost["total_usd"], 0.5)
+        self.assertEqual(cost["usable_takes"], 1)
+        self.assertEqual(cost["usd_per_usable"], 0.5)
+        self.assertEqual(cost["shots"]["shot-01"]["usd_per_usable"], 0.5)
+
+    def test_all_kills_say_no_usable_takes(self):
+        t = take.load(self.good)
+        t["review"]["verdict"] = "kill"
+        take.save(self.good, t)
+        page = self._page()
+        self.assertIn("no usable takes", page)
+        cost = self._json()["cost"]
+        self.assertIsNone(cost["usd_per_usable"])
+        self.assertEqual(cost["total_usd"], 0.5)
+
+    def test_report_without_cost_blocks_stays_silent(self):
+        for clip in (self.good, self.dead):
+            t = take.load(clip)
+            del t["review"]["cost"]
+            take.save(clip, t)
+        page = self._page()
+        self.assertNotIn("Spent", page)
+        self.assertNotIn("per usable", page)
+        self.assertIsNone(self._json()["cost"])
 
 
 if __name__ == "__main__":

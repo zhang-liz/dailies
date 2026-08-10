@@ -139,6 +139,53 @@ def find_takes(root):
     return takes
 
 
+def _usd(v):
+    """Dollars, with enough precision for sub-dime judge costs."""
+    return "$%.2f" % v if v >= 0.1 else "$%.3f" % v
+
+
+def _cost_stats(takes):
+    """Spend and dollars per usable (non-kill) take, or None when no
+    sidecar carries a cost block. Spend with zero survivors has no
+    per-usable number; the caller says so instead of dividing."""
+    costed = [((t.get("review") or {}).get("cost") or {}).get("total_usd")
+              for t in takes]
+    costed = [c for c in costed if c is not None]
+    if not costed:
+        return None
+    usable = sum(1 for t in takes
+                 if (t.get("review") or {}).get("verdict") != "kill")
+    total = sum(costed)
+    return {"total_usd": round(total, 4),
+            "usable_takes": usable,
+            "usd_per_usable": round(total / usable, 4) if usable else None}
+
+
+def _cost_phrase(cost):
+    per = ("%s per usable take" % _usd(cost["usd_per_usable"])
+           if cost["usd_per_usable"] is not None else "no usable takes")
+    return "spent %s: %s" % (_usd(cost["total_usd"]), per)
+
+
+def cost_summary(root):
+    """The report's cost numbers as data for --json consumers: total,
+    usable takes, dollars per usable, and the same per shot."""
+    takes = _find_takes(root)
+    overall = _cost_stats(takes)
+    if overall is None:
+        return None
+    by_shot = {}
+    for t in takes:
+        by_shot.setdefault(t.get("shot") or "untagged", []).append(t)
+    shots = {}
+    for s, group in by_shot.items():
+        c = _cost_stats(group)
+        if c:
+            shots[s] = c
+    overall["shots"] = shots
+    return overall
+
+
 def _timeline(mech, duration, defects=()):
     if not duration:
         return ""
@@ -215,6 +262,8 @@ def _take_card(t, report_dir):
     defects = (r.get("vlm") or {}).get("defects") or []
     if defects:
         stats.append("%d defects" % len(defects))
+    if (r.get("cost") or {}).get("total_usd") is not None:
+        stats.append(_usd(r["cost"]["total_usd"]))
     # Sectioned by family, each section under a colored heading, so a take
     # that failed three different ways reads as three groups, not one wall.
     mech_reasons = [r_ for r_ in (mech.get("kill_reasons") or [])
@@ -293,10 +342,12 @@ def build(root, output):
             badge = ' <span class="doomed">doomed</span>'
         # The heading is linkable (report.html#shot-07): slugged shot name.
         slug = re.sub(r"[^a-z0-9]+", "-", shot.lower()).strip("-") or "shot"
+        shot_cost = _cost_stats(group)
+        extra = " · %s" % _cost_phrase(shot_cost) if shot_cost else ""
         sections.append('<h2 id="%s">%s · %d takes · %d killed%s</h2>'
                         '<div class="takes">%s</div>' % (
                             slug, html.escape(shot), len(group), kills,
-                            badge,
+                            extra + badge,
                             "".join(_take_card(t, report_dir)
                                     for t in group)))
 
@@ -308,6 +359,11 @@ def build(root, output):
                        % html.escape(", ".join(doomed_shots)))
     killed = sum(1 for t in takes
                  if (t.get("review") or {}).get("verdict") == "kill")
+    # The header strip ends in the headline number: dollars per usable
+    # take, the figure the whole night optimizes.
+    overall = _cost_stats(takes)
+    costline = " %s." % _cost_phrase(overall).capitalize() \
+        if overall else ""
     doc = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>dailies report</title><style>%s</style></head><body>
@@ -323,7 +379,8 @@ Click any timestamp or timeline dot to jump the clip to that moment.</div>
 <i class="defect adherence"></i>adherence</div>
 %s
 <script>%s</script></body></html>""" % (
-        CSS, len(takes), killed, len(takes) - killed, doomed_line,
+        CSS, len(takes), killed, len(takes) - killed,
+        doomed_line + costline,
         "\n".join(sections), JS)
     with open(output, "w") as f:
         f.write(doc)
