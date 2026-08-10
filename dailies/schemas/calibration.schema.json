@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zhang-liz/dailies/raw/main/dailies/schemas/calibration.schema.json",
+  "title": "dailies-calibration.json",
+  "description": "Written by dailies calibrate (conformal threshold) and dailies fit (per-rule weights) into one file; either half may be absent because either command can run first.",
+  "type": "object",
+  "anyOf": [
+    { "required": ["alpha", "lambda"] },
+    { "required": ["weights", "bias"] }
+  ],
+  "properties": {
+    "alpha": {
+      "description": "Guaranteed maximum false-kill rate.",
+      "type": "number"
+    },
+    "lambda": {
+      "description": "Kill threshold on the judge's kill score; null when the gold set cannot support the guarantee.",
+      "type": ["number", "null"]
+    },
+    "n_pass": { "type": "integer" },
+    "n_kill": { "type": "integer" },
+    "kill_recall": { "type": "number" },
+    "needed": {
+      "description": "Gold-pass takes required before lambda exists at this alpha.",
+      "type": "integer"
+    },
+    "created": { "type": "string" },
+    "weights": {
+      "description": "Per-rule logistic weights fitted to the user's gold verdicts.",
+      "type": "object",
+      "additionalProperties": { "type": "number" }
+    },
+    "bias": { "type": "number" },
+    "n_fit": { "type": "integer" },
+    "fit_accuracy": { "type": "number" }
+  }
+}

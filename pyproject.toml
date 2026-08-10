@@ -33,3 +33,6 @@ Issues = "https://github.com/zhang-liz/dailies/issues"
 
 [tool.setuptools.packages.find]
 include = ["dailies*"]
+
+[tool.setuptools.package-data]
+dailies = ["schemas/*.schema.json"]
