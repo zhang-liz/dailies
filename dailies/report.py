@@ -119,7 +119,9 @@ document.addEventListener('click', function (e) {
 """
 
 
-def _find_takes(root):
+def find_takes(root):
+    """Every take.json sidecar under root, loaded; _clip carries the clip
+    path so consumers never re-derive it. Shared with brief."""
     takes = []
     for dirpath, _, files in os.walk(root):
         for f in files:
@@ -264,7 +266,7 @@ def _take_card(t, report_dir):
 
 
 def build(root, output):
-    takes = _find_takes(root)
+    takes = find_takes(root)
     report_dir = os.path.dirname(os.path.abspath(output)) or "."
     by_shot = {}
     for t in takes:
