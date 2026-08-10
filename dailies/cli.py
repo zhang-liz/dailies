@@ -30,14 +30,24 @@ def cmd_review(args):
         print("no clips found", file=sys.stderr)
         return 1
     kwargs = _vlm_kwargs(args)
+    ndjson = getattr(args, "ndjson", False)
+    if ndjson:
+        from . import watch
     for clip in clips:
-        pipeline.review_clip(clip, shot=args.shot, force=args.force,
-                             **kwargs)
+        t, _ = pipeline.review_clip(clip, shot=args.shot,
+                                    force=args.force, **kwargs)
+        if ndjson:
+            print(json.dumps(watch.serialize(t, clip)), flush=True)
     takes = list(pipeline.rerank(
         clips, calibration=kwargs.get("calibration")).values())
 
     kills = [t for t in takes if t["review"]["verdict"] == "kill"]
-    if args.json:
+    if ndjson:
+        # The summary line has no "clip" key; that is how consumers
+        # tell it from the per-take lines.
+        print(json.dumps({"reviewed": len(takes),
+                          "killed": len(kills)}), flush=True)
+    elif args.json:
         json.dump({"reviewed": len(takes), "killed": len(kills),
                    "takes": takes}, sys.stdout, indent=2)
         print()
@@ -206,7 +216,11 @@ def main(argv=None):
     rv.add_argument("--force", action="store_true",
                     help="re-review even when the cached take_id matches")
     vlm_flags(rv)
-    rv.add_argument("--json", action="store_true")
+    fmt = rv.add_mutually_exclusive_group()
+    fmt.add_argument("--json", action="store_true")
+    fmt.add_argument("--ndjson", action="store_true",
+                     help="stream one JSON line per clip as it is "
+                          "reviewed, then a summary line")
     rv.set_defaults(func=cmd_review)
 
     g = sub.add_parser("gold", help="record human pass/kill verdicts")
