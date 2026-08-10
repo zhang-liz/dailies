@@ -14,6 +14,7 @@ def _vlm_kwargs(args):
         "vlm_model": args.vlm_model,
         "rubric_path": args.rubric,
         "api_key": os.environ.get("DAILIES_VLM_KEY"),
+        "samples": args.samples,
     }
 
 
@@ -101,6 +102,10 @@ def main(argv=None):
         sp.add_argument("--rubric", metavar="FILE",
                         help="rubric file (.json, or .yaml with PyYAML); "
                              "default: built-in rules")
+        sp.add_argument("--samples", type=int, default=1, metavar="K",
+                        help="ask the judge K times per rule; "
+                             "disagreement becomes confidence, and an "
+                             "unagreed defect cannot kill (default 1)")
 
     rv = sub.add_parser("review", help="run the funnel on clips")
     rv.add_argument("paths", nargs="+", help="clips, globs, or directories")
