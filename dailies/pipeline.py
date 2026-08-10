@@ -39,7 +39,8 @@ def shot_for(clip, override=None):
 
 
 def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
-                vlm_model="qwen3-vl", rubric_path=None, api_key=None):
+                vlm_model="qwen3-vl", rubric_path=None, api_key=None,
+                samples=1):
     """Run the funnel on one clip and save its sidecar. Returns
     (take, cached): cached is True when the content hash matched an
     existing review and nothing was recomputed."""
@@ -65,7 +66,7 @@ def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
             and (force or not r.get("vlm"))):
         rules = rubric_mod.load(rubric_path)
         r["vlm"] = vlm.screen(clip, t, rules, vlm_endpoint, vlm_model,
-                              api_key=api_key)
+                              api_key=api_key, samples=samples)
         reasons = vlm.kill_reasons(r["vlm"], rules)
         if reasons:
             r["mechanical"]["kill_reasons"].extend(reasons)

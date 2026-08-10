@@ -141,6 +141,34 @@ class VlmTests(unittest.TestCase):
         self.assertEqual(defects, [{"t": 0.25, "severity": 5,
                                     "note": "Extra fingers?"}])
 
+    def test_samples_agree_confidence_is_one_and_kills(self):
+        # The stub answers deterministically, so 2 samples agree.
+        main(["review", self.clip, "--vlm", self.endpoint,
+              "--samples", "2"])
+        r = take.load(self.clip)["review"]
+        hands = [d for d in r["vlm"]["defects"]
+                 if d["rule"] == "anatomy.hands"]
+        self.assertEqual(hands[0]["confidence"], 1.0)
+        self.assertEqual(r["vlm"]["uncertain"], [])
+        self.assertEqual(r["verdict"], "kill")
+
+    def test_split_votes_are_uncertain_and_do_not_kill(self):
+        questions = [{"ask": "Extra fingers?", "severity": 5}]
+        yes = [{"q": 1, "yes": True, "t": 1.0, "note": "six"}]
+        no = [{"q": 1, "yes": False, "t": None, "note": ""}]
+        defects, uncertain = vlm._aggregate_answers(
+            [yes, yes, no], questions, first_t=0.0)
+        self.assertTrue(uncertain)
+        self.assertEqual(defects[0]["confidence"], 0.67)
+        defects[0]["rule"] = "anatomy.hands"
+        self.assertTrue(vlm.kill_reasons(
+            {"defects": defects}, {"anatomy.hands": {"fail_at": 4}}))
+        low, _ = vlm._aggregate_answers([yes, no], questions, first_t=0.0)
+        low[0]["rule"] = "anatomy.hands"
+        self.assertEqual(low[0]["confidence"], 0.5)
+        self.assertEqual(vlm.kill_reasons(
+            {"defects": low}, {"anatomy.hands": {"fail_at": 4}}), [])
+
     def test_defect_parser_tolerates_prose(self):
         self.assertEqual(
             vlm._parse_defects('yes {"defects":[{"t":1,"severity":9,'

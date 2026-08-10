@@ -22,6 +22,12 @@ from . import rubric as rubric_mod
 
 FRAME_WIDTH = 512
 TIMEOUT = 120
+# Sampling the judge k times turns disagreement into a confidence
+# signal (self-consistency, arXiv:2203.11171). Temperature must be
+# nonzero for repeat samples to disagree at all; a defect needs
+# CONF_KILL agreement before it may kill.
+SAMPLE_TEMPERATURE = 0.7
+CONF_KILL = 0.67
 
 SYSTEM = (
     "You are a strict QC inspector for AI-generated video. You are shown "
@@ -68,11 +74,11 @@ def extract_frames(clip, times):
     return frames
 
 
-def _request(endpoint, model, api_key, messages):
+def _request(endpoint, model, api_key, messages, temperature=0):
     body = json.dumps({
         "model": model,
         "messages": messages,
-        "temperature": 0,
+        "temperature": temperature,
     }).encode()
     from . import __version__
     req = urllib.request.Request(
@@ -150,19 +156,38 @@ def _parse_answers(text):
     return out
 
 
-def _defects_from_answers(answers, questions, first_t):
-    """Yes answers become defects. Severity comes from the rubric's
-    question, never from the model: the judge only says yes or no and
-    where."""
-    out = []
-    for a in answers:
-        if not a["yes"] or not 1 <= a["q"] <= len(questions):
+def _aggregate_answers(votes, questions, first_t):
+    """Answer lists from k samples to (defects, uncertain).
+
+    Severity comes from the rubric's question, never from the model:
+    the judge only says yes or no and where. A sample that omits a
+    question voted no. A question splits the samples: the rule is
+    uncertain. With more than one sample, defects carry the yes
+    fraction as confidence."""
+    n = len(votes)
+    defects, uncertain = [], False
+    for qi, q in enumerate(questions, 1):
+        yes_votes = [v for v in votes
+                     if any(a["q"] == qi and a["yes"] for a in v)]
+        p = len(yes_votes) / n
+        if 0 < p < 1:
+            uncertain = True
+        if p < 0.5:
             continue
-        q = questions[a["q"] - 1]
-        out.append({"t": a["t"] if a["t"] is not None else first_t,
-                    "severity": max(1, min(5, int(q.get("severity", 3)))),
-                    "note": a["note"] or str(q["ask"]).split("\n")[-1][:200]})
-    return out
+        first = next(a for a in yes_votes[0]
+                     if a["q"] == qi and a["yes"])
+        d = {"t": first["t"] if first["t"] is not None else first_t,
+             "severity": max(1, min(5, int(q.get("severity", 3)))),
+             "note": (first["note"]
+                      or str(q["ask"]).split("\n")[-1][:200])}
+        if n > 1:
+            d["confidence"] = round(p, 2)
+        defects.append(d)
+    return defects, uncertain
+
+
+def _defects_from_answers(answers, questions, first_t):
+    return _aggregate_answers([answers], questions, first_t)[0]
 
 
 MERGE_GAP = 0.8
@@ -182,15 +207,19 @@ def _merge(defects):
             if d["severity"] > last["severity"]:
                 last["severity"] = d["severity"]
                 last["note"] = d["note"]
+            if d.get("confidence") is not None:
+                last["confidence"] = max(d["confidence"],
+                                         last.get("confidence") or 0)
         else:
             out.append(dict(d))
     out.sort(key=lambda d: d["t"])
     return out
 
 
-def screen(clip, take, rules, endpoint, model, api_key=None):
+def screen(clip, take, rules, endpoint, model, api_key=None, samples=1):
     """Run every applicable rubric rule over the clip's candidate frames.
-    Returns the take.json "vlm" block."""
+    Returns the take.json "vlm" block. With samples > 1, checklist rules
+    are asked that many times and disagreement becomes confidence."""
     mech = ((take.get("review") or {}).get("mechanical") or {})
     times = mech.get("candidate_frames") or [0.0]
     frames = extract_frames(clip, times)
@@ -205,7 +234,9 @@ def screen(clip, take, rules, endpoint, model, api_key=None):
         ", ".join(str(t) for t, _ in frames))
 
     result = {"engine": model, "defects": [], "skipped": [],
-              "unparsed": []}
+              "unparsed": [], "uncertain": []}
+    if samples > 1:
+        result["samples"] = samples
     for name, rule in sorted(rules.items()):
         context = rubric_mod.context_for(rule, take)
         if context is None:
@@ -230,19 +261,34 @@ def screen(clip, take, rules, endpoint, model, api_key=None):
             text = "Rule %r: %s\n%s" % (name, prompt, stamps)
         content = [{"type": "text", "text": text}]
         content.extend(images)
-        reply = _request(endpoint, model, api_key, [
-            {"role": "system", "content": system},
-            {"role": "user", "content": content}])
+        messages = [{"role": "system", "content": system},
+                    {"role": "user", "content": content}]
+
         if questions:
-            answers = _parse_answers(reply)
-            defects = (None if answers is None else
-                       _defects_from_answers(answers, questions,
-                                             frames[0][0]))
+            k = max(1, samples)
+            temperature = 0 if k == 1 else SAMPLE_TEMPERATURE
+            votes = []
+            for _ in range(k):
+                answers = _parse_answers(_request(
+                    endpoint, model, api_key, messages,
+                    temperature=temperature))
+                if answers is not None:
+                    votes.append(answers)
+            if not votes:
+                result["unparsed"].append(name)
+                continue
+            defects, uncertain = _aggregate_answers(
+                votes, questions, frames[0][0])
+            if uncertain:
+                result["uncertain"].append(name)
         else:
-            defects = _parse_defects(reply)
-        if defects is None:
-            result["unparsed"].append(name)
-            continue
+            # Legacy severity rules stay single-shot; their model-chosen
+            # severities have no clean vote to aggregate.
+            defects = _parse_defects(_request(
+                endpoint, model, api_key, messages))
+            if defects is None:
+                result["unparsed"].append(name)
+                continue
         for d in defects:
             d["rule"] = name
         result["defects"].extend(defects)
@@ -252,13 +298,19 @@ def screen(clip, take, rules, endpoint, model, api_key=None):
 
 
 def kill_reasons(vlm_block, rules):
-    """Which defects cross their rule's fail_at threshold."""
+    """Which defects cross their rule's fail_at threshold. A defect the
+    samples disagreed on (confidence below CONF_KILL) may not kill; it
+    stays a finding for the review pile."""
     reasons = []
     for d in vlm_block.get("defects", []):
         fail_at = (rules.get(d["rule"]) or {}).get("fail_at")
-        if fail_at is not None and d["severity"] >= fail_at:
-            when = ("%s-%ss" % (d["t"], d["t_end"])
-                    if d.get("t_end") else "%ss" % d["t"])
-            reasons.append("%s severity %d at %s: %s" % (
-                d["rule"], d["severity"], when, d["note"]))
+        if fail_at is None or d["severity"] < fail_at:
+            continue
+        if (d.get("confidence") is not None
+                and d["confidence"] < CONF_KILL):
+            continue
+        when = ("%s-%ss" % (d["t"], d["t_end"])
+                if d.get("t_end") else "%ss" % d["t"])
+        reasons.append("%s severity %d at %s: %s" % (
+            d["rule"], d["severity"], when, d["note"]))
     return reasons
