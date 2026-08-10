@@ -44,6 +44,33 @@ def cmd_review(args):
     return 0
 
 
+def cmd_gold(args):
+    from . import gold
+    if args.gold_command == "add":
+        labeled = gold.add_paths(args.paths, args.label)
+        if not labeled:
+            print("no clips found", file=sys.stderr)
+            return 1
+        if args.json:
+            json.dump({"labeled": [c for c, _ in labeled],
+                       "label": args.label}, sys.stdout, indent=2)
+            print()
+        else:
+            for clip, _ in labeled:
+                print("%s  %s" % (args.label, clip))
+        return 0
+    takes = gold.collect(args.dir)
+    if args.json:
+        json.dump({"gold": [{"clip": c, "label": t["gold"]["label"]}
+                            for c, t in takes]}, sys.stdout, indent=2)
+        print()
+    else:
+        for clip, t in takes:
+            print("%-5s %s" % (t["gold"]["label"], clip))
+        print("%d labeled takes" % len(takes))
+    return 0
+
+
 def cmd_report(args):
     from . import report
     out = report.build(args.dir, args.output)
@@ -83,6 +110,17 @@ def main(argv=None):
     vlm_flags(rv)
     rv.add_argument("--json", action="store_true")
     rv.set_defaults(func=cmd_review)
+
+    g = sub.add_parser("gold", help="record human pass/kill verdicts")
+    gsub = g.add_subparsers(dest="gold_command", required=True)
+    ga = gsub.add_parser("add", help="label takes with your verdict")
+    ga.add_argument("paths", nargs="+", help="clips, globs, or directories")
+    ga.add_argument("--label", required=True, choices=["pass", "kill"])
+    ga.add_argument("--json", action="store_true")
+    gl = gsub.add_parser("list", help="show the gold set")
+    gl.add_argument("dir", nargs="?", default=".")
+    gl.add_argument("--json", action="store_true")
+    g.set_defaults(func=cmd_gold)
 
     rp = sub.add_parser("report", help="write the static HTML morning report")
     rp.add_argument("dir", nargs="?", default=".",
