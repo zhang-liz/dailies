@@ -217,9 +217,20 @@ def record_submit(ledger, driver, shot, job):
     """One job-table row per submission, from resubmit()'s return. Saved
     before anything else can fail, the row is what reconcile() polls
     after a crash. The mutation is the seeds alone; the full recipe
-    already lives in the stub sidecar."""
-    ledger["jobs"][job["job"]] = {
+    already lives in the stub sidecar.
+
+    Job ids must be unique within a run (docs/DRIVERS.md); a driver
+    reusing one gets a suffixed table key so the earlier row is never
+    overwritten. The row's "job" keeps the driver's own id, and
+    reconcile() polls with that, never the key."""
+    jid = job["job"]
+    key, n = jid, 1
+    while key in ledger["jobs"]:
+        n += 1
+        key = "%s-dup%d" % (jid, n)
+    ledger["jobs"][key] = {
         "driver": driver,
+        "job": jid,
         "clip": job["clip"],
         "parent": job["parent"],
         "shot": shot,
@@ -227,7 +238,7 @@ def record_submit(ledger, driver, shot, job):
         "submitted": _utcnow(),
         "state": "queued"}
     ledger["attempts"] = len(ledger["jobs"])
-    return ledger["jobs"][job["job"]]
+    return ledger["jobs"][key]
 
 
 def record_result(ledger, job_id, state, error=None):
@@ -268,6 +279,7 @@ def adopt_stubs(ledger, root):
                 continue
             ledger["jobs"][jid] = {
                 "driver": reg.get("driver"),
+                "job": jid,
                 "clip": path[:-len(".take.json")],
                 "parent": t.get("parent"),
                 "shot": t.get("shot"),
@@ -300,7 +312,7 @@ def reconcile(ledger, poll=None):
             observed[jid] = "done"
             continue
         try:
-            status = poll(job["driver"], jid)
+            status = poll(job["driver"], job.get("job", jid))
         except regen.DriverError as e:
             record_result(ledger, jid, "error", str(e))
             observed[jid] = "error"

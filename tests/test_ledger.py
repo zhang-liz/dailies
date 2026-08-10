@@ -313,6 +313,19 @@ class RecordTests(unittest.TestCase):
         self.assertTrue(row["submitted"])
         self.assertEqual(led["attempts"], 1)
 
+    def test_duplicate_job_id_gets_a_suffixed_key(self):
+        led = ledger.fresh()
+        for clip in ("/x/a.mp4", "/x/b.mp4"):
+            ledger.record_submit(led, "drv", "s",
+                                 {"job": "j1", "clip": clip,
+                                  "parent": "p", "recipe": None})
+        self.assertEqual(sorted(led["jobs"]), ["j1", "j1-dup2"])
+        self.assertEqual(led["jobs"]["j1"]["clip"], "/x/a.mp4")
+        self.assertEqual(led["jobs"]["j1-dup2"]["clip"], "/x/b.mp4")
+        # Both rows keep the driver's own id for polling.
+        self.assertEqual(led["jobs"]["j1-dup2"]["job"], "j1")
+        self.assertEqual(led["attempts"], 2)
+
     def test_result_stamps_terminal_states(self):
         led = ledger.fresh()
         ledger.record_submit(led, "drv", "s",
@@ -438,6 +451,17 @@ class ReconcileTests(unittest.TestCase):
         observed = ledger.reconcile(self.led, poll=poll)
         self.assertEqual(observed, {"j1": "error", "j2": "queued"})
         self.assertEqual(self.led["jobs"]["j1"]["error"], "no such job")
+
+    def test_suffixed_rows_poll_the_drivers_own_id(self):
+        self.add_job("j1", os.path.join(self.dir, "a.mp4"))
+        self.add_job("j1", os.path.join(self.dir, "b.mp4"))
+        polled = []
+
+        def poll(driver, jid):
+            polled.append(jid)
+            return {"state": "queued"}
+        ledger.reconcile(self.led, poll=poll)
+        self.assertEqual(polled, ["j1", "j1"])
 
     def test_terminal_jobs_are_left_alone(self):
         self.add_job("j1", os.path.join(self.dir, "done.mp4"))

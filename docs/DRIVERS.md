@@ -8,7 +8,7 @@ Both must exit 0 on success. A non-zero exit, an empty job id, or unparseable st
 
 ### `<driver> submit`
 
-Reads one job object on stdin and prints one job id line on stdout. The id is opaque to dailies; the driver only has to accept it back in `poll`. Submit should return as soon as the job is queued; the generation happens behind `poll`.
+Reads one job object on stdin and prints one job id line on stdout. The id is opaque to dailies but must be unique within a run: the night ledger keys its job table by it. A reused id is stored under a suffixed key so it cannot overwrite an earlier row, and `poll` still receives the id exactly as printed. The driver only has to accept it back in `poll`. Submit should return as soon as the job is queued; the generation happens behind `poll`.
 
 ```json
 {
