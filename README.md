@@ -1,6 +1,6 @@
 # dailies
 
-**A command-line tool that triages batches of AI-generated video takes.** It kills the dead ones with timestamped evidence, ranks the survivors, and writes one HTML morning report. Not a library, not an MCP server, no daemon: a CLI you install with pip and point at a folder. Python 3.9+ and ffmpeg, zero other dependencies. Your shell, your scripts, or your agent calls it; a Claude Code skill ships in the repo to run the whole morning for you.
+**A command-line tool and agent skill that triage batches of AI-generated video takes.** It kills the dead ones with timestamped evidence, ranks the survivors, and writes one HTML morning report. Python 3.9+ and ffmpeg, zero other dependencies. Run it yourself from the shell, or let the bundled Claude Code skill run the whole morning for you.
 
 ```sh
 pip install video-dailies
