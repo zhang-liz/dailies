@@ -65,6 +65,15 @@ dailies judge-check ./takes --vlm URL --fail-below 0.6
 
 The report is one static HTML file: survivors ranked first per shot, hover a clip to scrub, defect spans marked on a timeline, kill reasons one click away.
 
+### The failure dossier
+
+```sh
+dailies brief ./takes
+dailies brief ./takes --json
+```
+
+`brief` answers "why does shot-07 keep dying" from the sidecars alone: per shot, take and kill counts with yield, a kill-reason histogram split mechanical vs rule, per-rule stats (defect count, takes affected, mean severity and confidence, one example defect with its file and timestamp), the ranked survivors, lineage depth from `parent` chains, and the distinct seeds, models, and lora strengths across takes that carry `recipe` blocks. Pure deterministic aggregation, no LLM calls, and no causal claims: it reports counts, the reasoning stays with you or your agent. Shots without recipes still get a full dossier.
+
 ## Local judges
 
 Any OpenAI-compatible endpoint works, so open-weight judges trained specifically for generated video plug in with no code: serve [VideoScore2](https://arxiv.org/abs/2509.22799) or [VideoPhy-AutoEval](https://github.com/Hritikbansal/videophy) behind vLLM's OpenAI server and point `--vlm` at it. A GPU-poor setup can run the mechanical funnel alone; it still kills the cheap deaths.
