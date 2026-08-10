@@ -27,7 +27,8 @@ One sidecar file per generated clip, named `<clip>.take.json`, next to the clip.
     "rank_in_shot": 2,
     "cost": { "vlm_usd": 0.0105, "clip_usd": 0.05, "total_usd": 0.0605, "unpriced_models": [] }
   },
-  "gold": { "label": "pass | kill", "labeled": "2026-08-09T08:00:00Z" }
+  "gold": { "label": "pass | kill", "labeled": "2026-08-09T08:00:00Z" },
+  "regen": { "driver": "comfy-driver --host 127.0.0.1:8188", "job": "9b1de6", "submitted": "2026-08-10T02:14:00Z" }
 }
 ```
 
@@ -43,6 +44,7 @@ One sidecar file per generated clip, named `<clip>.take.json`, next to the clip.
 - **Severity is the rubric's, confidence is the sampler's.** Checklist rules fix each question's severity in the rubric; the judge only answers yes or no. `confidence` (optional) is the yes fraction across repeat samples; a defect below two-thirds agreement may not kill. `uncertain` lists rules whose samples split; `escalated` lists rules re-judged by a stronger model (`strong_engine`).
 - **Usage is measured, never estimated.** `vlm.usage` (optional) records what the judge actually consumed: request count and endpoint-reported prompt/completion tokens, total and per rule under `rules`. Tokens are zero when the endpoint reports no usage. `strong_usage` is the same record for the escalation model, kept separate because the two engines are priced differently.
 - **Prices are data, dollars are derived.** `review.cost` (optional) is usage priced through a user-supplied price file (per-model dollars per million input/output tokens, optional flat dollars per clip): `vlm_usd` from recorded usage, `clip_usd` copied from the file, `total_usd` their sum. A model with usage but no listed price lands in `unpriced_models` instead of being priced at zero. Rerunning with a new price file rewrites `cost` from the recorded usage; nothing is re-judged.
+- **`regen` belongs to resubmission tooling.** (optional) Written on a machine-resubmitted take: the driver command, the driver's opaque job id, and the submission time. The stub sidecar, carrying `parent` and the mutated `recipe`, is written before the clip lands, so a crash mid-generation loses no provenance and a restarted loop reconciles the recorded job id against the driver.
 - **`gold` belongs to the human.** It records the verdict the user actually made (`pass` or `kill`), is written only by explicit labeling (`dailies gold add`), and is the calibration and regression substrate. Review tooling must never write or infer it.
 
 ## Status

@@ -91,6 +91,16 @@
         "label": { "enum": ["pass", "kill"] },
         "labeled": { "type": "string" }
       }
+    },
+    "regen": {
+      "description": "Resubmission tooling's block: the driver command, its opaque job id, and the submission time, written on the pre-generated stub so a crashed loop can reconcile.",
+      "type": ["object", "null"],
+      "required": ["job"],
+      "properties": {
+        "driver": { "type": "string" },
+        "job": { "type": "string" },
+        "submitted": { "type": "string" }
+      }
     }
   }
 }
