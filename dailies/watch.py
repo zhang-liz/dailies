@@ -69,6 +69,16 @@ def loop(root, interval=5.0, settle=None, shot=None, report_path=None,
         stop.wait(interval)
 
 
+def serialize(t, clip):
+    """The per-take machine line. One shape shared by watch --json,
+    review --ndjson, and verdict, so orchestrators parse one contract."""
+    r = t["review"]
+    return {"clip": clip, "shot": t.get("shot"),
+            "verdict": r["verdict"],
+            "rank_in_shot": r.get("rank_in_shot"),
+            "kill_reasons": r["mechanical"]["kill_reasons"]}
+
+
 def run(args):
     """CLI entry: watch until interrupted."""
     if not os.path.isdir(args.dir):
@@ -78,12 +88,7 @@ def run(args):
     def emit(t, clip):
         r = t["review"]
         if args.json:
-            print(json.dumps({"clip": clip, "shot": t["shot"],
-                              "verdict": r["verdict"],
-                              "rank_in_shot": r["rank_in_shot"],
-                              "kill_reasons":
-                                  r["mechanical"]["kill_reasons"]}),
-                  flush=True)
+            print(json.dumps(serialize(t, clip)), flush=True)
         else:
             reasons = "; ".join(r["mechanical"]["kill_reasons"])
             print("%s  %-8s %s %s" % (
