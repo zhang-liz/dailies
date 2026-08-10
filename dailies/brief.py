@@ -24,27 +24,32 @@ def _file(t):
             or os.path.basename(t.get("_clip") or ""))
 
 
+def kill_class(reason):
+    """One kill reason to its (side, class): side "rule" for judge
+    kills (calibrated included), "mechanical" otherwise. Public so the
+    night ledger's futility test counts kills the same way brief does."""
+    m = _RULE_KILL.match(reason)
+    if m:
+        return "rule", m.group(1)
+    if reason.startswith(_CALIBRATED):
+        return "rule", "calibrated"
+    # Mechanical reasons lead with their kind: "black for",
+    # "frozen for", "probe: ...".
+    return "mechanical", (reason.split(None, 1)[0] if reason
+                          else "unknown").rstrip(":")
+
+
 def _kill_histogram(group):
     """kill_reasons of the killed takes, split mechanical vs rule."""
-    mech, rule = {}, {}
+    out = {"mechanical": {}, "rule": {}}
     for t in group:
         r = t.get("review") or {}
         if r.get("verdict") != "kill":
             continue
         for reason in (r.get("mechanical") or {}).get("kill_reasons") or []:
-            m = _RULE_KILL.match(reason)
-            if m:
-                key, side = m.group(1), rule
-            elif reason.startswith(_CALIBRATED):
-                key, side = "calibrated", rule
-            else:
-                # Mechanical reasons lead with their kind: "black for",
-                # "frozen for", "probe: ...".
-                key = (reason.split(None, 1)[0] if reason
-                       else "unknown").rstrip(":")
-                side = mech
-            side[key] = side.get(key, 0) + 1
-    return {"mechanical": mech, "rule": rule}
+            side, key = kill_class(reason)
+            out[side][key] = out[side].get(key, 0) + 1
+    return out
 
 
 def _rule_stats(group):
