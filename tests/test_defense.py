@@ -5,13 +5,18 @@ the judge-health gate."""
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from dailies import defense  # noqa: E402
+from dailies import defense, pipeline, take  # noqa: E402
+
+FFMPEG = shutil.which("ffmpeg")
 
 
 def sidecar(ident, parent=None, verdict="kill", reasons=None,
@@ -154,6 +159,121 @@ class AuditPickTests(unittest.TestCase):
         self.assertLess(picked, 90)
         self.assertEqual(sum(defense.audit_pick(t, 1.0) for t in ids),
                          400)
+
+
+class StubJudge(BaseHTTPRequestHandler):
+    """A checklist judge answering no to everything, except rules named
+    in `yes`; with sampled_only set, the yes appears only on sampled
+    (temperature > 0) requests, modeling a defect a single cheap ask
+    misses and repeat asks catch."""
+
+    requests = []
+    yes = ()
+    sampled_only = False
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(
+            int(self.headers["Content-Length"])))
+        type(self).requests.append(body)
+        text = body["messages"][1]["content"][0]["text"]
+        hit = (any(rule in text for rule in type(self).yes)
+               and (body.get("temperature", 0) > 0
+                    or not type(self).sampled_only))
+        content = json.dumps({"answers": [
+            {"q": 1, "yes": bool(hit), "t": 0.5, "note": "seen"},
+            {"q": 2, "yes": False}]})
+        payload = json.dumps({
+            "choices": [{"message": {"content": content}}]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):
+        pass
+
+
+def request_texts(requests):
+    return [r["messages"][1]["content"][0]["text"] for r in requests]
+
+
+@unittest.skipUnless(FFMPEG, "ffmpeg not on PATH")
+class PipelineDefenseBase(unittest.TestCase):
+    """One stub judge and one synthetic clip per test class."""
+
+    handler = StubJudge
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), cls.handler)
+        threading.Thread(target=cls.server.serve_forever,
+                         daemon=True).start()
+        cls.endpoint = "http://127.0.0.1:%d/v1" % cls.server.server_port
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def setUp(self):
+        self.handler.requests = []
+        self.handler.yes = ()
+        self.handler.sampled_only = False
+        self.dir = tempfile.mkdtemp(prefix="dailies-defense-e2e-")
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.clip = os.path.join(self.dir, "take-002.mp4")
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+             "-i", "testsrc2=size=320x240:rate=8", "-t", "1",
+             "-pix_fmt", "yuv420p", self.clip],
+            check=True)
+
+    def write_parent(self, ident=1, reasons=(HANDS,), prompt=None,
+                     parent=None):
+        """A purged ancestor: sidecar on disk, no clip."""
+        t = sidecar(ident, parent=parent, reasons=list(reasons),
+                    prompt=prompt)
+        path = os.path.join(self.dir, "take-%03d.mp4.take.json" % ident)
+        with open(path, "w") as f:
+            json.dump(t, f)
+        return t
+
+    def prep_child(self, parent_id, prompt=None, recipe="auto"):
+        t = take.load(self.clip)
+        t["parent"] = parent_id
+        if recipe == "auto":
+            recipe = ({"prompt_text": prompt}
+                      if prompt is not None else None)
+        t["recipe"] = recipe
+        take.save(self.clip, t)
+
+    def review(self, **kwargs):
+        kwargs.setdefault("vlm_endpoint", self.endpoint)
+        t, _ = pipeline.review_clip(self.clip, **kwargs)
+        return t
+
+
+class IntentGuardPipelineTests(PipelineDefenseBase):
+    def test_judge_sees_the_root_prompt_not_the_patch(self):
+        parent = self.write_parent(reasons=["black for 1.0s from 0.0s"],
+                                   prompt="the original direction")
+        self.prep_child(parent["take_id"], prompt="patched prompt")
+        t = self.review()
+        sent = request_texts(self.handler.requests)
+        self.assertTrue(any("the original direction" in s for s in sent))
+        self.assertFalse(any("patched prompt" in s for s in sent))
+        self.assertTrue(t["review"]["vlm"]["root_prompt"])
+        # The sidecar's own recipe stays verbatim.
+        self.assertEqual(take.load(self.clip)["recipe"]["prompt_text"],
+                         "patched prompt")
+        self.assertEqual(t["review"]["verdict"], "review")
+
+    def test_first_generation_take_judges_its_own_prompt(self):
+        self.prep_child(None, prompt="my own words")
+        t = self.review()
+        sent = request_texts(self.handler.requests)
+        self.assertTrue(any("my own words" in s for s in sent))
+        self.assertNotIn("root_prompt", t["review"]["vlm"])
 
 
 class JudgeGateTests(unittest.TestCase):

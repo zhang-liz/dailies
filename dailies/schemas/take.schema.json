@@ -76,7 +76,11 @@
             "unparsed": { "type": "array", "items": { "type": "string" } },
             "uncertain": { "type": "array", "items": { "type": "string" } },
             "escalated": { "type": "array", "items": { "type": "string" } },
-            "strong_engine": { "type": "string" }
+            "strong_engine": { "type": "string" },
+            "root_prompt": {
+              "description": "True when prompt context came from the root ancestor's prompt_text, not this take's own recipe.",
+              "type": "boolean"
+            }
           }
         },
         "verdict": { "enum": ["keep", "kill", "review"] },
