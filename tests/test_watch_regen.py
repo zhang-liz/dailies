@@ -360,6 +360,10 @@ class CliUsageTests(unittest.TestCase):
         self.dir = tempfile.mkdtemp(prefix="dailies-watch-cli-")
         self.addCleanup(shutil.rmtree, self.dir)
 
+    def test_not_a_directory_is_usage_error_exit_2(self):
+        self.assertEqual(main(["watch",
+                               os.path.join(self.dir, "nope")]), 2)
+
     def test_dry_run_needs_regen(self):
         self.assertEqual(main(["watch", self.dir, "--dry-run"]), 2)
 
