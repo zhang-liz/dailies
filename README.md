@@ -137,6 +137,8 @@ dailies schema take                              # the published contract
 
 `schema` prints JSON Schema documents checked into `dailies/schemas/` and shipped with the package: `take` (the sidecar, see [SPEC.md](SPEC.md)), `calibration`, `judge-history`.
 
+`regen` resubmits a failed take through a driver, an external executable speaking a two-call stdin/stdout contract ([docs/DRIVERS.md](docs/DRIVERS.md)): `dailies regen shot-07/take-031.mp4 --driver CMD` mutates the recipe (a fresh seed, nothing else), pre-writes the new clip's sidecar with `parent` and that recipe so lineage survives a crash, and hands the job to the driver; `--wait` polls until the clip lands. Any backend fits behind the contract; the reference ComfyUI driver is on the roadmap.
+
 ### Exit codes
 
 | code | meaning |
