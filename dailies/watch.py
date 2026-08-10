@@ -9,6 +9,7 @@ seconds without being touched; encoders write files incrementally and
 reviewing a half-written mp4 kills a good take.
 """
 
+import collections
 import json
 import os
 import shlex
@@ -17,7 +18,14 @@ import sys
 import threading
 import time
 
-from . import breaker, pipeline, take
+from . import breaker, ledger, pipeline, regen, take
+
+# Submits per minute across all shots: a fast driver feeding a spinning
+# loop is a money fire, so the ceiling is global and low by default.
+REGEN_RATE = 6
+# Consecutive driver failures that stop a shot's resubmissions for the
+# rest of the run; a driver failing this often is misconfigured.
+REGEN_FAIL_BLOCK = 3
 
 
 def _snapshot(root):
@@ -38,7 +46,7 @@ def _snapshot(root):
 
 def loop(root, interval=5.0, settle=None, shot=None, report_path=None,
          stop=None, emit=None, on_doomed=None, doom_floor=None,
-         doom_confidence=None, **review_kwargs):
+         doom_confidence=None, on_kill=None, **review_kwargs):
     """Watch root until stop is set. Calls emit(take, clip) after each
     review. Files that already have a current sidecar are skipped, so
     restarting the watcher never re-reviews old takes.
@@ -46,7 +54,9 @@ def loop(root, interval=5.0, settle=None, shot=None, report_path=None,
     After each review the doomed-shot breaker reassesses every shot from
     its sidecars (restart-safe: no state beyond the fired set). The take
     passed to emit carries an ephemeral _shot_doomed; on_doomed(shot,
-    state) fires once per shot per run, after the take's own emit."""
+    state) fires once per shot per run, after the take's own emit.
+    on_kill(take, clip, takes) fires last on each fresh kill verdict, so
+    a regen hook acts after the human-facing lines have printed."""
     stop = stop or threading.Event()
     if settle is None:
         settle = max(interval, 1.0)
@@ -88,6 +98,8 @@ def loop(root, interval=5.0, settle=None, shot=None, report_path=None,
                         if st["doomed"] and s not in fired:
                             fired.add(s)
                             on_doomed(s, st)
+                if on_kill and t["review"]["verdict"] == "kill":
+                    on_kill(t, path, takes)
         previous = current
         stop.wait(interval)
 
@@ -100,6 +112,113 @@ def serialize(t, clip):
             "verdict": r["verdict"],
             "rank_in_shot": r.get("rank_in_shot"),
             "kill_reasons": r["mechanical"]["kill_reasons"]}
+
+
+def parse_want(pairs):
+    """--want SHOT=K pairs as the ledger's want map. Splits on the last
+    "=" so shot ids containing one still parse."""
+    want = {}
+    for pair in pairs or []:
+        shot, _, k = pair.rpartition("=")
+        if not shot or not k.isdigit() or int(k) < 1:
+            raise ValueError("bad --want %r, want SHOT=K with K >= 1"
+                             % pair)
+        want[shot] = int(k)
+    return want
+
+
+class Regenerator:
+    """The watch-side regen policy: one on_kill() per fresh kill.
+
+    Every stopping rule that sidecars can prove lives in the ledger's
+    should_submit gate; this class adds only what the loop alone knows:
+    a global submits-per-minute cap and a consecutive-driver-failure
+    block, both defenses against a misconfigured driver spinning
+    submit-fail loops. Failed submits count against the rate cap too,
+    so an instantly-erroring driver cannot spin faster than a working
+    one. Failure counts are per-run memory on purpose: a restart gives
+    the driver one more chance, and the rate cap bounds the damage if
+    it is still broken."""
+
+    def __init__(self, driver, ledger_path, want=None, dry_run=False,
+                 rate=REGEN_RATE, fail_block=REGEN_FAIL_BLOCK,
+                 now=time.time):
+        self.driver = driver
+        self.path = ledger_path
+        self.dry_run = dry_run
+        self.rate = rate
+        self.fail_block = fail_block
+        self.now = now
+        self.submits = collections.deque()
+        self.failures = {}
+        self.led = ledger.load(ledger_path)
+        if want:
+            self.led["want"].update(want)
+        if not dry_run:
+            # Restart recovery: settle jobs a crashed run left pending,
+            # filesystem first, driver poll second.
+            if any(j["state"] not in regen.TERMINAL
+                   for j in self.led["jobs"].values()):
+                ledger.reconcile(self.led)
+            ledger.save(self.path, self.led)
+
+    def _sweep(self):
+        """Mark pending jobs whose clips landed. Filesystem only, no
+        polling: mid-run, a missing clip just means still rendering."""
+        changed = False
+        for jid in sorted(self.led["jobs"]):
+            job = self.led["jobs"][jid]
+            if job["state"] not in regen.TERMINAL \
+                    and os.path.exists(job["clip"]):
+                ledger.record_result(self.led, jid, "done")
+                changed = True
+        return changed
+
+    def on_kill(self, t, clip, takes):
+        """Decide and act on one killed take. Returns the event dict the
+        caller prints: action submitted, dry-run, skipped (reason names
+        the stopping rule), or driver-error."""
+        shot = t.get("shot")
+        event = {"event": "regen", "shot": shot, "parent": clip}
+        changed = self._sweep()
+        cutoff = self.now() - 60.0
+        while self.submits and self.submits[0] < cutoff:
+            self.submits.popleft()
+        if self.failures.get(shot, 0) >= self.fail_block:
+            event.update(action="skipped",
+                         reason="shot %s blocked: %d straight driver "
+                                "failures" % (shot, self.failures[shot]))
+        elif len(self.submits) >= self.rate:
+            event.update(action="skipped",
+                         reason="submit rate cap %d/min reached"
+                                % self.rate)
+        else:
+            ok, why = ledger.should_submit(self.led, takes, clip)
+            changed = True  # should_submit refreshed the shots table
+            if not ok:
+                event.update(action="skipped", reason=why)
+            elif self.dry_run:
+                event.update(action="dry-run",
+                             seeds=regen.mutate(t.get("recipe"))["seeds"])
+            else:
+                self.submits.append(self.now())
+                try:
+                    job = regen.resubmit(self.driver, clip)
+                except regen.DriverError as e:
+                    n = self.failures.get(shot, 0) + 1
+                    self.failures[shot] = n
+                    event.update(action="driver-error", error=str(e),
+                                 failures=n, fail_block=self.fail_block)
+                else:
+                    self.failures[shot] = 0
+                    ledger.record_submit(self.led, self.driver, shot,
+                                         job)
+                    event.update(action="submitted", job=job["job"],
+                                 clip=job["clip"],
+                                 seeds=(job["recipe"] or {}).get("seeds"))
+        if changed and not self.dry_run:
+            ledger.save(self.path, self.led)
+        return event
 
 
 def run_hook(cmd, shot, sidecar):
