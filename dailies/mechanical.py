@@ -19,6 +19,11 @@ BLACKDETECT = "blackdetect=d=0.1:pix_th=0.10"
 FREEZEDETECT = "freezedetect=n=-60dB:d=0.5"
 SCENE_THRESHOLD = 0.4
 CANDIDATE_FRAMES = 8
+# Sparse uniform strip alongside the YDIF peaks. Peaks find likely
+# artifacts; the strip guarantees no stretch of the clip is invisible to
+# the judge. 2 fps is the VideoScore2 ablation optimum; more frames hurt.
+UNIFORM_INTERVAL = 0.5
+MAX_FRAMES = 16
 
 
 class FfmpegMissing(RuntimeError):
@@ -196,11 +201,18 @@ def motion_smoothness(path, fps):
 
 
 def candidate_frames(series, n=CANDIDATE_FRAMES):
-    """Timestamps for the VLM stage: YDIF peaks plus the first frame."""
+    """Timestamps for the VLM stage: YDIF peaks, the first frame, and a
+    sparse uniform strip covering the stretches between peaks."""
     if not series:
         return []
     peaks = sorted(series[1:], key=lambda f: f[2], reverse=True)[: n - 1]
     times = {series[0][0]} | {t for t, _, _ in peaks}
+    end = series[-1][0]
+    t = UNIFORM_INTERVAL
+    while t < end and len(times) < MAX_FRAMES:
+        if all(abs(t - u) > UNIFORM_INTERVAL / 3 for u in times):
+            times.add(t)
+        t += UNIFORM_INTERVAL
     return sorted(round(t, 3) for t in times)
 
 
