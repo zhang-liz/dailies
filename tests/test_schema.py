@@ -2,9 +2,10 @@
 
 Stdlib only, so validation is a small JSON Schema subset interpreter
 covering exactly what the checked-in schemas use: type, properties,
-required, items, enum, pattern, anyOf, additionalProperties-as-schema.
-A schema drifting outside that subset should extend the interpreter,
-not silently pass.
+required, items, enum, pattern, anyOf, additionalProperties-as-schema,
+plus local $defs/$ref (2020-12 style: keywords beside a $ref apply
+too). A schema drifting outside that subset should extend the
+interpreter, not silently pass.
 """
 
 import io
@@ -28,7 +29,7 @@ SCHEMAS = os.path.join(os.path.dirname(__file__), "..", "dailies",
                        "schemas")
 KNOWN_KEYWORDS = {"$schema", "$id", "title", "description", "type",
                   "properties", "required", "items", "enum", "pattern",
-                  "anyOf", "additionalProperties"}
+                  "anyOf", "additionalProperties", "$defs", "$ref"}
 
 _TYPES = {
     "object": lambda d: isinstance(d, dict),
@@ -43,14 +44,31 @@ _TYPES = {
 }
 
 
-def errors(schema, doc, path="$"):
+def resolve(root, ref):
+    """A local "#/$defs/..." pointer to its schema, or KeyError."""
+    if not ref.startswith("#/"):
+        raise KeyError("only local refs are supported: %r" % ref)
+    node = root
+    for part in ref[2:].split("/"):
+        node = node[part]
+    return node
+
+
+def errors(schema, doc, path="$", root=None):
     """All violations of the schema subset; empty list means valid."""
+    if root is None:
+        root = schema
     errs = []
+    if "$ref" in schema:
+        # 2020-12: a $ref applies alongside its sibling keywords.
+        errs.extend(errors(resolve(root, schema["$ref"]), doc, path,
+                           root))
     t = schema.get("type")
     if t is not None:
         types = t if isinstance(t, list) else [t]
         if not any(_TYPES[x](doc) for x in types):
-            return ["%s: expected %s, got %r" % (path, types, doc)]
+            return errs + ["%s: expected %s, got %r"
+                           % (path, types, doc)]
     if "enum" in schema and doc not in schema["enum"]:
         errs.append("%s: %r not in %s" % (path, doc, schema["enum"]))
     if "pattern" in schema and isinstance(doc, str):
@@ -58,7 +76,7 @@ def errors(schema, doc, path="$"):
             errs.append("%s: %r fails pattern %s"
                         % (path, doc, schema["pattern"]))
     if "anyOf" in schema:
-        branches = [errors(s, doc, path) for s in schema["anyOf"]]
+        branches = [errors(s, doc, path, root) for s in schema["anyOf"]]
         if all(branches):
             errs.append("%s: no anyOf branch matched" % path)
     if isinstance(doc, dict):
@@ -69,17 +87,17 @@ def errors(schema, doc, path="$"):
         for key, sub in props.items():
             if key in doc:
                 errs.extend(errors(sub, doc[key],
-                                   "%s.%s" % (path, key)))
+                                   "%s.%s" % (path, key), root))
         extra = schema.get("additionalProperties")
         if isinstance(extra, dict):
             for key in doc:
                 if key not in props:
                     errs.extend(errors(extra, doc[key],
-                                       "%s.%s" % (path, key)))
+                                       "%s.%s" % (path, key), root))
     if isinstance(doc, list) and "items" in schema:
         for i, item in enumerate(doc):
             errs.extend(errors(schema["items"], item,
-                               "%s[%d]" % (path, i)))
+                               "%s[%d]" % (path, i), root))
     return errs
 
 
@@ -93,7 +111,7 @@ def keywords(schema):
     names, which are data."""
     seen = set(schema)
     for key, val in schema.items():
-        if key == "properties":
+        if key in ("properties", "$defs"):
             for sub in val.values():
                 seen |= keywords(sub)
         elif key in ("items", "additionalProperties") \
@@ -160,6 +178,20 @@ class ValidatorTests(unittest.TestCase):
                                         "weights": {"r.x": "high"},
                                         "bias": 0.0}))
 
+    def test_local_refs_resolve(self):
+        schema = {"$defs": {"x": {"type": "integer"}},
+                  "$ref": "#/$defs/x"}
+        self.assertTrue(errors(schema, "s"))
+        self.assertFalse(errors(schema, 3))
+        # Keywords beside the $ref apply too, 2020-12 style.
+        sibling = {"$defs": {"o": {"type": "object",
+                                   "required": ["a"]}},
+                   "$ref": "#/$defs/o",
+                   "properties": {"b": {"type": "integer"}}}
+        self.assertTrue(errors(sibling, {"b": 1}))       # missing a
+        self.assertTrue(errors(sibling, {"a": 1, "b": "x"}))
+        self.assertFalse(errors(sibling, {"a": 1, "b": 2}))
+
     def test_schemas_stay_inside_the_subset(self):
         for name in ("take", "calibration", "judge-history"):
             unknown = keywords(load_schema(name)) - KNOWN_KEYWORDS
@@ -223,6 +255,37 @@ class SidecarSchemaTests(unittest.TestCase):
         t["regen"] = {"driver": "comfy-driver"}  # job id is required
         self.assertTrue(errors(self.schema, t))
         t["regen"] = {"job": 3}
+        self.assertTrue(errors(self.schema, t))
+
+    def test_costed_scrutinized_sidecar_validates(self):
+        usage = {"calls": 2, "prompt_tokens": 200,
+                 "completion_tokens": 40,
+                 "rules": {"r.x": {"calls": 2, "prompt_tokens": 200,
+                                   "completion_tokens": 40}}}
+        t = gold_sidecar(self.dir, "c.mp4", "pass", [3])
+        t["parent"] = "sha256:%064x" % 1
+        t["review"]["vlm"].update(
+            {"usage": usage, "strong_engine": "big-vlm",
+             "strong_usage": usage})
+        t["review"]["scrutiny"] = {
+            "engine": "stub", "defects": [], "samples": 3,
+            "usage": usage, "strong_engine": "big-vlm",
+            "strong_usage": usage, "scrutinized": ["r.x"]}
+        t["review"]["cost"] = {"vlm_usd": 0.0016, "clip_usd": 0.05,
+                               "total_usd": 0.0516,
+                               "unpriced_models": []}
+        self.assertEqual(errors(self.schema, t), [])
+        # The shared vlm shape has teeth through the ref.
+        t["review"]["scrutiny"] = {"engine": "stub"}  # defects required
+        self.assertTrue(errors(self.schema, t))
+        t["review"]["scrutiny"] = None  # a null block stays legal
+        t["review"]["cost"] = {"vlm_usd": "free", "total_usd": 0.0}
+        self.assertTrue(errors(self.schema, t))
+        t["review"]["cost"] = {"clip_usd": 0.05}  # totals required
+        self.assertTrue(errors(self.schema, t))
+        t["review"]["cost"] = None  # a null block stays legal
+        self.assertEqual(errors(self.schema, t), [])
+        t["review"]["vlm"]["usage"] = {"calls": "two"}
         self.assertTrue(errors(self.schema, t))
 
     def test_unknown_keys_are_tolerated(self):

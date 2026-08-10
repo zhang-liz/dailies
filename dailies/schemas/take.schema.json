@@ -5,6 +5,67 @@
   "description": "One sidecar per generated clip, <clip>.take.json, next to the clip. SPEC.md is the prose contract; unknown keys are preserved, never stripped, so every object here deliberately admits additional properties.",
   "type": "object",
   "required": ["output"],
+  "$defs": {
+    "usage": {
+      "description": "One judge's token spend, recorded from endpoint answers: totals plus per-rule rows.",
+      "type": "object",
+      "properties": {
+        "calls": { "type": "integer" },
+        "prompt_tokens": { "type": "integer" },
+        "completion_tokens": { "type": "integer" },
+        "rules": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "calls": { "type": "integer" },
+              "prompt_tokens": { "type": "integer" },
+              "completion_tokens": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "vlm": {
+      "description": "One judging pass: vlm.screen's block, optionally escalated. review.vlm and review.scrutiny share this shape.",
+      "type": ["object", "null"],
+      "required": ["engine", "defects"],
+      "properties": {
+        "engine": { "type": "string" },
+        "samples": { "type": "integer" },
+        "defects": {
+          "type": "array",
+          "items": {
+            "description": "One finding, not one frame; t_end marks a span.",
+            "type": "object",
+            "required": ["rule", "severity"],
+            "properties": {
+              "t": { "type": "number" },
+              "t_end": { "type": "number" },
+              "rule": { "type": "string" },
+              "severity": { "type": "number" },
+              "confidence": { "type": "number" },
+              "note": { "type": "string" }
+            }
+          }
+        },
+        "skipped": { "type": "array", "items": { "type": "string" } },
+        "unparsed": { "type": "array", "items": { "type": "string" } },
+        "uncertain": { "type": "array", "items": { "type": "string" } },
+        "escalated": { "type": "array", "items": { "type": "string" } },
+        "strong_engine": { "type": "string" },
+        "usage": { "$ref": "#/$defs/usage" },
+        "strong_usage": {
+          "description": "The strong judge's own spend, kept apart from the cheap judge's because the engines are priced differently.",
+          "$ref": "#/$defs/usage"
+        },
+        "root_prompt": {
+          "description": "True when prompt context came from the root ancestor's prompt_text, not this take's own recipe.",
+          "type": "boolean"
+        }
+      }
+    }
+  },
   "properties": {
     "take_id": {
       "description": "Content hash of the clip file, algorithm-prefixed (sha256:, blake3:).",
@@ -50,42 +111,10 @@
             "kill_reasons": { "type": "array", "items": { "type": "string" } }
           }
         },
-        "vlm": {
-          "type": ["object", "null"],
-          "required": ["engine", "defects"],
-          "properties": {
-            "engine": { "type": "string" },
-            "samples": { "type": "integer" },
-            "defects": {
-              "type": "array",
-              "items": {
-                "description": "One finding, not one frame; t_end marks a span.",
-                "type": "object",
-                "required": ["rule", "severity"],
-                "properties": {
-                  "t": { "type": "number" },
-                  "t_end": { "type": "number" },
-                  "rule": { "type": "string" },
-                  "severity": { "type": "number" },
-                  "confidence": { "type": "number" },
-                  "note": { "type": "string" }
-                }
-              }
-            },
-            "skipped": { "type": "array", "items": { "type": "string" } },
-            "unparsed": { "type": "array", "items": { "type": "string" } },
-            "uncertain": { "type": "array", "items": { "type": "string" } },
-            "escalated": { "type": "array", "items": { "type": "string" } },
-            "strong_engine": { "type": "string" },
-            "root_prompt": {
-              "description": "True when prompt context came from the root ancestor's prompt_text, not this take's own recipe.",
-              "type": "boolean"
-            }
-          }
-        },
+        "vlm": { "$ref": "#/$defs/vlm" },
         "scrutiny": {
           "description": "Harder re-judging of a passing regen take on its ancestors' killing rules; same shape as vlm, plus the scrutinized rule names.",
-          "type": ["object", "null"],
+          "$ref": "#/$defs/vlm",
           "properties": {
             "scrutinized": { "type": "array", "items": { "type": "string" } }
           }
@@ -96,6 +125,17 @@
           "required": ["rate"],
           "properties": {
             "rate": { "type": "number" }
+          }
+        },
+        "cost": {
+          "description": "Dollars from recorded usage and the price file: judge spend (scrutiny included), optional per-clip price, models with usage but no price named instead of zeroed.",
+          "type": ["object", "null"],
+          "required": ["vlm_usd", "total_usd"],
+          "properties": {
+            "vlm_usd": { "type": "number" },
+            "clip_usd": { "type": "number" },
+            "total_usd": { "type": "number" },
+            "unpriced_models": { "type": "array", "items": { "type": "string" } }
           }
         },
         "verdict": { "enum": ["keep", "kill", "review"] },
@@ -112,7 +152,7 @@
       }
     },
     "regen": {
-      "description": "Resubmission tooling's block: the driver command, its opaque job id, and the submission time, written on the pre-generated stub so a crashed loop can reconcile.",
+      "description": "Resubmission tooling's block: the driver command, its job id (opaque, unique within a run), and the submission time, written on the pre-generated stub so a crashed loop can reconcile.",
       "type": ["object", "null"],
       "required": ["job"],
       "properties": {
