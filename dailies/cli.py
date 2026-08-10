@@ -209,6 +209,35 @@ def cmd_brief(args):
     return 0
 
 
+def cmd_assemble(args):
+    from . import assemble
+    size = None
+    if args.scale:
+        try:
+            w, h = args.scale.lower().split("x")
+            size = (int(w), int(h))
+        except ValueError:
+            print("bad --scale %r, want WxH" % args.scale, file=sys.stderr)
+            return 2
+    result = assemble.assemble(
+        args.dir, args.output, shots_file=args.shots, alts=args.alts,
+        fps=args.fps, size=size, csv_path=args.csv,
+        slate=not args.no_slate)
+    if args.json:
+        json.dump(result, sys.stdout, indent=2)
+        print()
+        return 0
+    print("cut %d takes from %d shots into %s (%.1fs, %sx%s @ %s fps)"
+          % (len(result["segments"]), len(result["shots"]),
+             result["output"], result["duration"], result["width"],
+             result["height"], result["fps"]))
+    if not result["slated"]:
+        print("slates skipped: ffmpeg has no drawtext filter"
+              if not args.no_slate else "slates off", file=sys.stderr)
+    print("wrote %s" % result["csv"])
+    return 0
+
+
 def cmd_watch(args):
     from . import watch
     return watch.run(args)
@@ -341,6 +370,33 @@ def main(argv=None):
                     help="directory to scan for take.json sidecars")
     br.add_argument("--json", action="store_true")
     br.set_defaults(func=cmd_brief)
+
+    asm = sub.add_parser(
+        "assemble",
+        help="join the best surviving take per shot into one rough cut")
+    asm.add_argument("dir", nargs="?", default=".",
+                     help="directory to scan for take.json sidecars")
+    asm.add_argument("-o", "--output", default="dailies-cut.mp4")
+    asm.add_argument("--shots", metavar="FILE",
+                     help="shot-list file, one shot id per line, # comments; "
+                          "sets cut order. Unlisted shots follow in name "
+                          "order; without a file, shots cut in name order")
+    asm.add_argument("--alts", type=int, default=0, metavar="N",
+                     help="append the next N ranked takes per shot after "
+                          "the best one (default 0)")
+    asm.add_argument("--fps", type=float,
+                     help="normalize segments to this rate (default: the "
+                          "first cut take's rate)")
+    asm.add_argument("--scale", metavar="WxH",
+                     help="normalize segments to this frame size (default: "
+                          "the first cut take's size)")
+    asm.add_argument("--csv", metavar="FILE",
+                     help="timecode-to-source map (default: the output "
+                          "name with .csv)")
+    asm.add_argument("--no-slate", action="store_true",
+                     help="skip the burned-in per-take slate")
+    asm.add_argument("--json", action="store_true")
+    asm.set_defaults(func=cmd_assemble)
 
     w = sub.add_parser(
         "watch", help="review takes as they land in a directory")
