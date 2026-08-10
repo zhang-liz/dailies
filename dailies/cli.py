@@ -195,6 +195,20 @@ def cmd_schema(args):
     return 0
 
 
+def cmd_brief(args):
+    from . import brief
+    data = brief.build(args.dir)
+    if not data["n_takes"]:
+        print("no take sidecars found", file=sys.stderr)
+        return 1
+    if args.json:
+        json.dump(data, sys.stdout, indent=2)
+        print()
+    else:
+        print(brief.render(data))
+    return 0
+
+
 def cmd_watch(args):
     from . import watch
     return watch.run(args)
@@ -318,6 +332,15 @@ def main(argv=None):
     rp.add_argument("-o", "--output", default="dailies-report.html")
     rp.add_argument("--json", action="store_true")
     rp.set_defaults(func=cmd_report)
+
+    br = sub.add_parser(
+        "brief",
+        help="per-shot failure dossier from sidecars: kill histograms, "
+             "rule stats, survivors, lineage, recipe deltas. No LLM")
+    br.add_argument("dir", nargs="?", default=".",
+                    help="directory to scan for take.json sidecars")
+    br.add_argument("--json", action="store_true")
+    br.set_defaults(func=cmd_brief)
 
     w = sub.add_parser(
         "watch", help="review takes as they land in a directory")
