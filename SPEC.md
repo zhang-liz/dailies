@@ -21,11 +21,12 @@ One sidecar file per generated clip, named `<clip>.take.json`, next to the clip.
     "env": { "comfyui": "0.9.4", "torch": "2.9.1+cu126", "gpu": "RTX 4090" }
   },
   "review": {
-    "mechanical": { "black_frames": [], "freeze": [], "scene_cuts": [], "flicker_score": 0.12, "candidate_frames": [0.0, 3.2], "kill_reasons": [] },
-    "vlm": { "engine": "qwen3-vl", "defects": [ { "t": 3.2, "t_end": 4.1, "rule": "anatomy.hands", "severity": 3, "note": "left hand 6 fingers during cup grab" } ], "skipped": [], "unparsed": [] },
+    "mechanical": { "black_frames": [], "freeze": [], "scene_cuts": [], "flicker_score": 0.12, "motion_smoothness": 0.94, "candidate_frames": [0.0, 3.2], "kill_reasons": [] },
+    "vlm": { "engine": "qwen3-vl", "samples": 3, "defects": [ { "t": 3.2, "t_end": 4.1, "rule": "anatomy.hands", "severity": 3, "confidence": 0.67, "note": "left hand 6 fingers during cup grab" } ], "skipped": [], "unparsed": [], "uncertain": [], "escalated": [], "strong_engine": "big-vlm" },
     "verdict": "keep | kill | review",
     "rank_in_shot": 2
-  }
+  },
+  "gold": { "label": "pass | kill", "labeled": "2026-08-09T08:00:00Z" }
 }
 ```
 
@@ -38,6 +39,8 @@ One sidecar file per generated clip, named `<clip>.take.json`, next to the clip.
 - **`parent` links a rerun to its source take.** Lineage is the chain of parent pointers; no separate database is required.
 - **A defect is one finding, not one frame.** Per-frame repeats of the same rule at contiguous timestamps merge into a single defect; `t_end` (optional) marks the span.
 - **Verdicts are honest.** `kill` requires stated reasons. Mechanical checks alone never produce `keep`; that requires eyes or a screening model.
+- **Severity is the rubric's, confidence is the sampler's.** Checklist rules fix each question's severity in the rubric; the judge only answers yes or no. `confidence` (optional) is the yes fraction across repeat samples; a defect below two-thirds agreement may not kill. `uncertain` lists rules whose samples split; `escalated` lists rules re-judged by a stronger model (`strong_engine`).
+- **`gold` belongs to the human.** It records the verdict the user actually made (`pass` or `kill`), is written only by explicit labeling (`dailies gold add`), and is the calibration and regression substrate. Review tooling must never write or infer it.
 
 ## Status
 

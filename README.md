@@ -30,9 +30,48 @@ Stage 2 screens the survivors with a vision model. Point `--vlm` at any OpenAI-c
 dailies review ./takes --vlm http://localhost:8000/v1 --vlm-model qwen3-vl
 ```
 
-Frames are sampled at the mechanical stage's difference peaks, not uniformly: artifact frames are frame-difference outliers. Rules come from a rubric (`--rubric film.json`, or `.yaml` with PyYAML installed); each rule is a prompt plus an optional `fail_at` severity, so project-specific checks (a prop's continuity, a wardrobe color, no watermarks) need zero code. Defects land in the sidecar with rule, timestamp, severity, and note; a rule kills a take only past its `fail_at`.
+Frames are sampled at the mechanical stage's difference peaks plus a sparse uniform strip, so likely artifact moments get attention and no stretch of the clip is invisible to the judge (2 fps is the VideoScore2 sampling optimum, arXiv:2509.22799).
+
+The default rules are checklists: yes/no evidence questions, each carrying the severity a yes implies. VLM judges answer binary questions consistently and pick numbers on a scale badly (VisionReward, arXiv:2412.21059), so the model only says yes or no and where; severity stays in the rubric. Question text follows the published defect taxonomies (GeneVA, arXiv:2509.08818; VideoPhy-2 physics rules, arXiv:2503.06800). Custom rubrics (`--rubric film.json`, or `.yaml` with PyYAML installed) can use questions or a legacy free `prompt` with model-chosen severity; project-specific checks (a prop's continuity, a wardrobe color, no watermarks) need zero code. Defects land in the sidecar with rule, timestamp, severity, and note; a rule kills a take only past its `fail_at`.
+
+### Confidence, cascades
+
+```sh
+dailies review ./takes --vlm URL --samples 3
+dailies review ./takes --vlm CHEAP_URL --samples 3 --vlm-strong STRONG_URL --vlm-strong-model big-vlm
+```
+
+`--samples K` asks the judge every checklist K times; the yes fraction becomes per-defect confidence, and a defect below two-thirds agreement cannot kill, only flag for review (self-consistency, arXiv:2203.11171). With `--vlm-strong`, rules the cheap judge split on are re-judged once by the stronger model, and only those: the cascade spends the expensive model where it earns its price (RouteLLM, arXiv:2406.18665).
+
+### Your verdicts as ground truth
+
+Label takes with the call you actually made, then let the tool learn from you:
+
+```sh
+dailies gold add shot-07/take-031.mp4 --label kill
+dailies gold add keepers/ --label pass
+dailies calibrate ./takes --alpha 0.05      # conformal kill threshold
+dailies fit ./takes                          # per-rule weights, your taste
+dailies review ./takes --vlm URL --calibration dailies-calibration.json
+```
+
+`calibrate` sets the kill threshold by split conformal calibration over your gold-pass takes (Conformal Risk Control, arXiv:2208.02814): under exchangeability, at most an `alpha` fraction of auto-kills are wrong, and the command refuses to print a guarantee it cannot back (19 gold-pass takes minimum at alpha 0.05). `fit` runs a stdlib logistic regression from rule evidence to your kill labels, so ranking follows your taste, not raw severity sums. Both live in `dailies-calibration.json`; recalibrate after changing the judge model, the rubric, or the video generator.
+
+```sh
+dailies judge-check ./takes --vlm URL --fail-below 0.6
+```
+
+`judge-check` re-judges the frozen gold set without touching sidecars and appends agreement, Cohen's kappa, and false/missed kills to a history file, with the delta against the last run. Run it after every judge or rubric change; it is the answer to "did the new model silently change my kills" (EvalGen, arXiv:2404.12272).
 
 The report is one static HTML file: survivors ranked first per shot, hover a clip to scrub, defect spans marked on a timeline, kill reasons one click away.
+
+## Local judges
+
+Any OpenAI-compatible endpoint works, so open-weight judges trained specifically for generated video plug in with no code: serve [VideoScore2](https://arxiv.org/abs/2509.22799) or [VideoPhy-AutoEval](https://github.com/Hritikbansal/videophy) behind vLLM's OpenAI server and point `--vlm` at it. A GPU-poor setup can run the mechanical funnel alone; it still kills the cheap deaths.
+
+## Honest limits
+
+Automated judgment of generated video tops out around rank correlation 0.66-0.77 against human raters in 2025 evaluations, and VLMs hallucinate worst exactly on synthetic-video physics (VideoHallu, arXiv:2505.01481). dailies is triage that saves review time, not automated quality judgment: it never says a take is good, and the `review` pile exists because a judge that cannot decide should say so. Distribution-level metrics (FVD and successors) are deliberately absent; they compare sets of videos against a reference distribution and say nothing about one take on one morning.
 
 For overnight batches, watch the output directory instead of reviewing after the fact:
 
@@ -42,7 +81,7 @@ dailies watch ~/ComfyUI/output --report report.html --vlm http://localhost:8000/
 
 New clips are reviewed as they land (after a settle period so half-written files are left alone), ranks update per shot, and the report is rebuilt after every take, so the morning report exists by morning. Restarting the watcher skips everything already reviewed. Same flags as `review`; `--json` emits one JSON line per take for piping into anything else.
 
-Each clip gets a `<clip>.take.json` sidecar: content-hash take id, probe info, black/freeze spans, scene cuts, flicker score, candidate frames for the VLM stage, verdict (`kill` or `review`), rank within the shot. Reviews are cached by content hash; `--force` re-runs. Sidecar blocks owned by other tools (slate's `recipe`) are preserved.
+Each clip gets a `<clip>.take.json` sidecar: content-hash take id, probe info, black/freeze spans, scene cuts, flicker score (motion-masked, so intended action does not read as flicker), motion smoothness (interpolation-reconstruction, the VBench construct on plain ffmpeg), candidate frames for the VLM stage, verdict (`kill` or `review`), rank within the shot. Reviews are cached by content hash; `--force` re-runs. Sidecar blocks owned by other tools (slate's `recipe`) are preserved.
 
 ## Tests
 
