@@ -63,6 +63,20 @@ def cmd_review(args):
     return 0
 
 
+def cmd_verdict(args):
+    """One clip in, one JSON line out; the exit code carries the call
+    so a shell or orchestrator can branch without parsing."""
+    from . import watch
+    if not os.path.isfile(args.clip):
+        print("not a file: %s" % args.clip, file=sys.stderr)
+        return 2
+    kwargs = _vlm_kwargs(args)
+    t, _ = pipeline.review_clip(args.clip, shot=args.shot,
+                                force=args.force, **kwargs)
+    print(json.dumps(watch.serialize(t, args.clip)))
+    return 3 if t["review"]["verdict"] == "kill" else 0
+
+
 def cmd_gold(args):
     from . import gold
     if args.gold_command == "add":
@@ -222,6 +236,17 @@ def main(argv=None):
                      help="stream one JSON line per clip as it is "
                           "reviewed, then a summary line")
     rv.set_defaults(func=cmd_review)
+
+    vd = sub.add_parser(
+        "verdict",
+        help="review one clip and answer in the exit code: 0 keep or "
+             "review, 3 kill, 2 error")
+    vd.add_argument("clip", help="one clip file")
+    vd.add_argument("--shot", help="tag the take with this shot id")
+    vd.add_argument("--force", action="store_true",
+                    help="re-review even when the cached take_id matches")
+    vlm_flags(vd)
+    vd.set_defaults(func=cmd_verdict)
 
     g = sub.add_parser("gold", help="record human pass/kill verdicts")
     gsub = g.add_subparsers(dest="gold_command", required=True)
