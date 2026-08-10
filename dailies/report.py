@@ -170,7 +170,7 @@ def _cost_phrase(cost):
 def cost_summary(root):
     """The report's cost numbers as data for --json consumers: total,
     usable takes, dollars per usable, and the same per shot."""
-    takes = _find_takes(root)
+    takes = find_takes(root)
     overall = _cost_stats(takes)
     if overall is None:
         return None
