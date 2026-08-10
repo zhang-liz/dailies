@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "video-dailies"
-version = "0.1.0"
+version = "0.2.0"
 description = "Triage for AI-generated video takes: kill the dead, rank the survivors"
 readme = "README.md"
 license = { text = "MIT" }
