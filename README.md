@@ -38,6 +38,16 @@ The same run on an easier batch killed a take at confidence 0.67 (two of three j
 
 Full walkthrough with the clips and every output: [the tutorial](https://multimodalsociety.com/blog/overnight-dailies).
 
+## Or let an agent run the morning
+
+The repo ships a Claude Code skill, [triage-dailies](skills/triage-dailies/SKILL.md), that drives this whole ritual for you: it summarizes the batch, pulls up the defect frame behind every doubtful verdict so you can look before you rule, records your keep/kill calls as gold labels (only yours; it never labels on its own), and recalibrates the judge once your labels can carry it.
+
+```sh
+cp -r skills/triage-dailies ~/.claude/skills/
+```
+
+Then say "morning triage" in Claude Code from your takes directory.
+
 ## Requirements
 
 Python 3.9+, ffmpeg and ffprobe on PATH. No Python dependencies; `blake3` is picked up if installed, otherwise hashes are `sha256:`-prefixed.
