@@ -74,6 +74,22 @@ dailies brief ./takes --json
 
 `brief` answers "why does shot-07 keep dying" from the sidecars alone: per shot, take and kill counts with yield, a kill-reason histogram split mechanical vs rule, per-rule stats (defect count, takes affected, mean severity and confidence, one example defect with its file and timestamp), the ranked survivors, lineage depth from `parent` chains, and the distinct seeds, models, and lora strengths across takes that carry `recipe` blocks. Pure deterministic aggregation, no LLM calls, and no causal claims: it reports counts, the reasoning stays with you or your agent. Shots without recipes still get a full dossier.
 
+### What a usable take costs
+
+Every judged request's token usage is recorded in the sidecar, total and per rule. Point `--prices` at a price file you maintain and each sidecar gains `review.cost`; the report header, shot headings, and take cards then show spend, ending in the number a night optimizes: dollars per usable (non-kill) take. `report --json` carries the same numbers.
+
+```sh
+dailies review ./takes --vlm URL --prices prices.json
+```
+
+```json
+{"models": {"qwen3-vl": {"input": 0.20, "output": 0.80},
+            "big-vlm": {"input": 3.00, "output": 15.00}},
+ "clip": 0.05}
+```
+
+Model rates are dollars per million input/output tokens; `clip` is an optional flat dollar cost per generated clip (a hosted per-clip rate, or your own $/GPU-hour guess folded down). Prices are data, never code: hosted rates change too often to pin in a release, so the file is yours to edit. A model with usage but no listed price is named in `cost.unpriced_models`, never silently priced at zero. Supplying `--prices` later re-prices recorded usage without re-judging anything.
+
 ## The rough cut
 
 After triage, watch the survivors as one file instead of a folder:
