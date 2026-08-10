@@ -1,0 +1,18 @@
+name: Feature request
+description: Something the tool should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: pain
+    attributes:
+      label: The pain
+      description: What happens in your workflow today that this would remove?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The proposal
+      description: What should dailies do? Check docs/ROADMAP.md first; if it is on there, say which item so interest gets counted.
+    validations:
+      required: true

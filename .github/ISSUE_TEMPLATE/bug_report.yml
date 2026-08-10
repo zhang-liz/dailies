@@ -1,0 +1,38 @@
+name: Bug report
+description: Something behaved wrong
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: dailies version
+      description: Output of `dailies --version`
+      placeholder: 0.2.0
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran
+      placeholder: dailies review ./takes --vlm ... --samples 3
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: sidecar
+    attributes:
+      label: Sidecar of the affected take
+      description: Paste the `<clip>.take.json` if you can; it usually contains the whole story. Redact prompt text if needed.
+      render: json
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, ffmpeg version
+      placeholder: macOS 15, Python 3.12, ffmpeg 7.1
