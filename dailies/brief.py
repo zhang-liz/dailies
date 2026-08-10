@@ -165,7 +165,9 @@ def _recipe_deltas(group):
 
 
 def build(root):
-    """The dossier dict: one entry per shot, plus totals."""
+    """The dossier dict: one entry per shot, plus totals. Regen stubs
+    whose clips have not landed count as pending, never as takes, so
+    yield measures footage."""
     takes = report.find_takes(root)
     by_id = {t["take_id"]: t for t in takes if t.get("take_id")}
     by_shot = {}
@@ -175,23 +177,27 @@ def build(root):
     shots = []
     for shot in sorted(by_shot):
         group = by_shot[shot]
-        n = len(group)
-        kills = sum(1 for t in group
+        pending = [t for t in group if report.pending_regen(t)]
+        landed = [t for t in group if not report.pending_regen(t)]
+        n = len(landed)
+        kills = sum(1 for t in landed
                     if (t.get("review") or {}).get("verdict") == "kill")
         shots.append({
             "shot": shot,
             "n_takes": n,
+            "pending": len(pending),
             "kills": kills,
-            "yield": round((n - kills) / n, 3),
-            "kill_reasons": _kill_histogram(group),
-            "rules": _rule_stats(group),
-            "survivors": _survivors(group),
-            "lineage": _lineage(group, by_id),
-            "recipe": _recipe_deltas(group),
+            "yield": round((n - kills) / n, 3) if n else None,
+            "kill_reasons": _kill_histogram(landed),
+            "rules": _rule_stats(landed),
+            "survivors": _survivors(landed),
+            "lineage": _lineage(landed, by_id),
+            "recipe": _recipe_deltas(landed),
         })
     killed = sum(s["kills"] for s in shots)
-    n = len(takes)
-    return {"n_takes": n, "kills": killed,
+    pending_total = sum(s["pending"] for s in shots)
+    n = len(takes) - pending_total
+    return {"n_takes": n, "kills": killed, "pending": pending_total,
             "yield": round((n - killed) / n, 3) if n else None,
             "shots": shots}
 
@@ -203,13 +209,22 @@ def _hist_line(h):
 
 def render(data):
     """The dossier as terminal text, one block per shot."""
-    lines = ["%d takes across %d shots: %d killed, yield %.0f%%" % (
-        data["n_takes"], len(data["shots"]), data["kills"],
-        100 * data["yield"])]
+    head = "%d takes across %d shots: %d killed" % (
+        data["n_takes"], len(data["shots"]), data["kills"])
+    if data["yield"] is not None:
+        head += ", yield %.0f%%" % (100 * data["yield"])
+    if data["pending"]:
+        head += ", %d regens pending" % data["pending"]
+    lines = [head]
     for s in data["shots"]:
         lines.append("")
-        lines.append("%s: %d takes, %d killed, yield %.0f%%" % (
-            s["shot"], s["n_takes"], s["kills"], 100 * s["yield"]))
+        line = "%s: %d takes, %d killed" % (
+            s["shot"], s["n_takes"], s["kills"])
+        if s["yield"] is not None:
+            line += ", yield %.0f%%" % (100 * s["yield"])
+        if s["pending"]:
+            line += ", %d pending" % s["pending"]
+        lines.append(line)
         for side in ("mechanical", "rule"):
             if s["kill_reasons"][side]:
                 lines.append("  kills (%s): %s" % (

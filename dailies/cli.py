@@ -205,7 +205,7 @@ def cmd_schema(args):
 def cmd_brief(args):
     from . import brief
     data = brief.build(args.dir)
-    if not data["n_takes"]:
+    if not data["n_takes"] and not data["pending"]:
         print("no take sidecars found", file=sys.stderr)
         return 1
     if args.json:

@@ -109,5 +109,43 @@ class DoomedReportTests(unittest.TestCase):
         self.assertNotIn('<span class="doomed">', open(out).read())
 
 
+class PendingReportTests(unittest.TestCase):
+    # A regen stub whose clip has not landed must not render a broken
+    # video card; it gets a pending marker instead.
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="dailies-pendrep-test-")
+        self.addCleanup(shutil.rmtree, self.dir)
+        d = os.path.join(self.dir, "shot-01")
+        os.makedirs(d)
+        t = {"take_id": "sha256:good", "shot": "shot-01",
+             "output": {"file": "good.mp4"},
+             "review": {"mechanical": {"kill_reasons": []},
+                        "verdict": "review", "rank_in_shot": 1}}
+        with open(os.path.join(d, "good.mp4.take.json"), "w") as f:
+            json.dump(t, f)
+        stub = {"take_id": None, "shot": "shot-01",
+                "parent": "sha256:good",
+                "output": {"file": "good-regen-01.mp4"},
+                "recipe": {"seeds": {"3": 7}}, "review": None,
+                "regen": {"driver": "drv", "job": "j1",
+                          "submitted": "2026-08-09T00:00:00Z"}}
+        with open(os.path.join(d, "good-regen-01.mp4.take.json"),
+                  "w") as f:
+            json.dump(stub, f)
+
+    def test_pending_stub_gets_a_marker_not_a_video_card(self):
+        out = os.path.join(self.dir, "report.html")
+        main(["report", self.dir, "-o", out])
+        page = open(out).read()
+        self.assertIn('class="take pending"', page)
+        self.assertIn("regen not landed", page)
+        self.assertIn("job j1", page)
+        self.assertNotIn('src="shot-01/good-regen-01.mp4"', page)
+        self.assertIn("shot-01 · 1 takes · 0 killed · 1 pending", page)
+        self.assertIn("1 takes reviewed, 0 killed, 1 to watch.", page)
+        self.assertIn("1 regens pending.", page)
+
+
 if __name__ == "__main__":
     unittest.main()

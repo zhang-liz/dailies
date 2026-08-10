@@ -160,6 +160,8 @@ class BriefTests(unittest.TestCase):
         d = os.path.join(self.dir, "shot-c")
         sidecar(d, "x.mp4", shot="shot-c", parent="sha256:y.mp4")
         sidecar(d, "y.mp4", shot="shot-c", parent="sha256:x.mp4")
+        for name in ("x.mp4", "y.mp4"):  # landed, so not pending
+            open(os.path.join(d, name), "wb").close()
         c = self.shot("shot-c")
         self.assertEqual(c["lineage"]["reruns"], 2)
         self.assertEqual(c["lineage"]["max_depth"], 2)
@@ -192,6 +194,40 @@ class BriefTests(unittest.TestCase):
         self.assertIn("recipes: none recorded", out)
         self.assertIn("raw.mp4 unreviewed, 0 defects", out)
         self.assertNotIn("\u2014", out)
+
+    def test_pending_regen_stub_counted_apart(self):
+        # Stub on disk, clip not landed: pending, never a take.
+        sidecar(os.path.join(self.dir, "shot-a"), "t3-regen-01.mp4",
+                shot="shot-a", parent="sha256:t3.mp4",
+                recipe={"seeds": {"3": 9}},
+                regen={"driver": "drv", "job": "j1",
+                       "submitted": "2026-08-09T00:00:00Z"})
+        d = self.data()
+        self.assertEqual((d["n_takes"], d["pending"], d["yield"]),
+                         (4, 1, 0.5))
+        a = self.shot("shot-a")
+        self.assertEqual((a["n_takes"], a["pending"], a["yield"]),
+                         (3, 1, 0.333))
+        # No survivor row, no rerun credit for a clip that is an IOU.
+        self.assertEqual([sv["file"] for sv in a["survivors"]],
+                         ["t3.mp4"])
+        self.assertEqual(a["lineage"], {"reruns": 2, "max_depth": 2})
+        rc, out = run(["brief", self.dir])
+        self.assertEqual(rc, 0)
+        self.assertIn("2 killed, yield 50%, 1 regens pending", out)
+        self.assertIn("shot-a: 3 takes, 2 killed, yield 33%, 1 pending",
+                      out)
+
+    def test_all_pending_shot_renders_without_yield(self):
+        sidecar(os.path.join(self.dir, "shot-d"), "d-regen-01.mp4",
+                shot="shot-d", parent="sha256:gone",
+                regen={"driver": "drv", "job": "j2"})
+        d = self.shot("shot-d")
+        self.assertEqual((d["n_takes"], d["pending"], d["yield"]),
+                         (0, 1, None))
+        rc, out = run(["brief", self.dir])
+        self.assertEqual(rc, 0)
+        self.assertIn("shot-d: 0 takes, 0 killed, 1 pending", out)
 
     def test_empty_dir_exits_1(self):
         empty = tempfile.mkdtemp(prefix="dailies-brief-empty-")

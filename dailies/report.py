@@ -96,6 +96,8 @@ summary { cursor: pointer; color: #9a9aa3; font-size: 14px; }
   vertical-align: -1px; }
 .doomed { font-size: 12px; letter-spacing: .06em; padding: 2px 7px;
   border-radius: 99px; background: #3a1d1d; color: #d87f7f; }
+.take.pending { border-style: dashed; }
+.verdict.pending { background: #26262c; color: #9a9aa3; }
 """
 
 JS = """
@@ -137,6 +139,16 @@ def find_takes(root):
             t["_clip"] = path[: -len(".take.json")]
             takes.append(t)
     return takes
+
+
+def pending_regen(t):
+    """A regen stub still waiting on its clip: provenance written, no
+    review, no pixels on disk yet. Counted apart from takes so a
+    night's numbers measure footage, not submissions. Shared with
+    brief."""
+    return (not t.get("review")
+            and bool(t.get("regen") or t.get("parent"))
+            and not os.path.exists(t["_clip"]))
 
 
 def _usd(v):
@@ -231,6 +243,26 @@ def _timeline(mech, duration, defects=()):
     height = 16 + max_row * 14
     return ('<div class="timeline" style="height:%dpx">%s</div>'
             % (height, "".join(spans)))
+
+
+def _pending_card(t):
+    """A stub whose clip has not landed gets a marker, never a broken
+    video card."""
+    reg = t.get("regen") or {}
+    bits = ["regen not landed"]
+    if reg.get("job"):
+        bits.append("job %s" % reg["job"])
+    if reg.get("submitted"):
+        bits.append("submitted %s" % reg["submitted"])
+    name = (t.get("output") or {}).get("file") \
+        or os.path.basename(t["_clip"])
+    return """<div class="take pending">
+<div class="meta">
+<div class="row1"><span class="name">%s</span>
+<span class="verdict pending">pending</span></div>
+<div class="stats">%s</div>
+</div></div>""" % (html.escape(name),
+                   html.escape(" · ".join(bits)))
 
 
 def _take_card(t, report_dir):
@@ -330,11 +362,13 @@ def build(root, output):
     for shot in sorted(by_shot):
         group = sorted(by_shot[shot], key=lambda t: (
             (t.get("review") or {}).get("rank_in_shot") or 10**6))
-        kills = sum(1 for t in group
+        pending = [t for t in group if pending_regen(t)]
+        landed = [t for t in group if not pending_regen(t)]
+        kills = sum(1 for t in landed
                     if (t.get("review") or {}).get("verdict") == "kill")
         # The breaker recomputes from sidecars, so a report built hours
         # after the watcher stopped flags the same shots.
-        state = breaker.assess([t["review"] for t in group
+        state = breaker.assess([t["review"] for t in landed
                                 if t.get("review")])
         badge = ""
         if state["doomed"]:
@@ -342,14 +376,18 @@ def build(root, output):
             badge = ' <span class="doomed">doomed</span>'
         # The heading is linkable (report.html#shot-07): slugged shot name.
         slug = re.sub(r"[^a-z0-9]+", "-", shot.lower()).strip("-") or "shot"
-        shot_cost = _cost_stats(group)
+        shot_cost = _cost_stats(landed)
         extra = " · %s" % _cost_phrase(shot_cost) if shot_cost else ""
+        if pending:
+            extra += " · %d pending" % len(pending)
         sections.append('<h2 id="%s">%s · %d takes · %d killed%s</h2>'
                         '<div class="takes">%s</div>' % (
-                            slug, html.escape(shot), len(group), kills,
+                            slug, html.escape(shot), len(landed), kills,
                             extra + badge,
                             "".join(_take_card(t, report_dir)
-                                    for t in group)))
+                                    for t in landed)
+                            + "".join(_pending_card(t)
+                                      for t in pending)))
 
     doomed_line = ""
     if doomed_shots:
@@ -359,11 +397,15 @@ def build(root, output):
                        % html.escape(", ".join(doomed_shots)))
     killed = sum(1 for t in takes
                  if (t.get("review") or {}).get("verdict") == "kill")
+    pending_total = sum(1 for t in takes if pending_regen(t))
+    reviewed = len(takes) - pending_total
     # The header strip ends in the headline number: dollars per usable
     # take, the figure the whole night optimizes.
     overall = _cost_stats(takes)
     costline = " %s." % _cost_phrase(overall).capitalize() \
         if overall else ""
+    pendline = " %d regens pending." % pending_total \
+        if pending_total else ""
     doc = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>dailies report</title><style>%s</style></head><body>
@@ -379,8 +421,8 @@ Click any timestamp or timeline dot to jump the clip to that moment.</div>
 <i class="defect adherence"></i>adherence</div>
 %s
 <script>%s</script></body></html>""" % (
-        CSS, len(takes), killed, len(takes) - killed,
-        doomed_line + costline,
+        CSS, reviewed, killed, reviewed - killed,
+        doomed_line + costline + pendline,
         "\n".join(sections), JS)
     with open(output, "w") as f:
         f.write(doc)
