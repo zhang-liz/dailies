@@ -285,6 +285,74 @@ class FailureBlockTests(RegenBase):
         self.assertEqual(rgn.failures["shot-07"], 0)
 
 
+class SweepTests(RegenBase):
+    # Kill events are no longer one-shot: the per-tick sweep retries
+    # every killed sidecar with no child stub and no ledger job.
+
+    def test_rate_capped_kill_submits_on_a_later_tick(self):
+        clock = [1000.0]
+        rgn = watch.Regenerator(self.driver, self.ledger_path, rate=1,
+                                now=lambda: clock[0])
+        a, ta = make_kill(self.dir, "a.mp4", shot="shot-a", ident=1)
+        b, tb = make_kill(self.dir, "b.mp4", shot="shot-b", ident=2)
+        takes = {a: ta, b: tb}
+        self.assertEqual(rgn.on_kill(ta, a, takes)["action"],
+                         "submitted")
+        ev = rgn.on_kill(tb, b, takes)
+        self.assertEqual(ev["action"], "skipped")
+        self.assertIn("rate cap", ev["reason"])
+        # Still capped: the sweep defers silently instead of dropping.
+        self.assertEqual(rgn.sweep_kills(self.dir), [])
+        clock[0] += 61.0
+        events = rgn.sweep_kills(self.dir)
+        self.assertEqual([e["action"] for e in events], ["submitted"])
+        self.assertEqual(events[0]["parent"], b)
+        # a's regen already has a stub and a ledger job; not resubmitted.
+        self.assertEqual(len(ledger.load(self.ledger_path)["jobs"]), 2)
+
+    def test_restart_picks_up_an_orphaned_kill(self):
+        clip, _ = make_kill(self.dir, "a.mp4")
+        # Fresh Regenerator, as after a crash; the first tick sweeps.
+        rgn = watch.Regenerator(self.driver, self.ledger_path)
+        events = rgn.sweep_kills(self.dir)
+        self.assertEqual([e["action"] for e in events], ["submitted"])
+        self.assertEqual(events[0]["parent"], clip)
+        self.assertEqual(len(ledger.load(self.ledger_path)["jobs"]), 1)
+        # The next sweep finds the child stub and the job; idempotent.
+        self.assertEqual(rgn.sweep_kills(self.dir), [])
+
+    def test_refused_kills_stay_silent_and_unsubmitted(self):
+        clip, t = make_kill(self.dir, "a.mp4")
+        ok = os.path.join(self.dir, "ok.mp4")
+        with open(ok, "wb") as f:
+            f.write(b"good pixels")
+        take.save(ok, dict(take.load(ok), **passing()))
+        rgn = watch.Regenerator(self.driver, self.ledger_path)
+        self.assertEqual(rgn.sweep_kills(self.dir), [])
+        self.assertEqual(ledger.load(self.ledger_path)["jobs"], {})
+
+    def test_dry_run_sweeps_nothing(self):
+        make_kill(self.dir, "a.mp4")
+        rgn = watch.Regenerator("/no/such/driver", self.ledger_path,
+                                dry_run=True)
+        self.assertEqual(rgn.sweep_kills(self.dir), [])
+        self.assertEqual(self.regen_stubs(), [])
+
+    def test_loop_fires_on_tick_every_poll(self):
+        empty = tempfile.mkdtemp(prefix="dailies-tick-")
+        self.addCleanup(shutil.rmtree, empty)
+        ticks = []
+        stop = threading.Event()
+
+        def on_tick():
+            ticks.append(1)
+            if len(ticks) >= 2:
+                stop.set()
+        watch.loop(empty, interval=0.05, settle=0.05, stop=stop,
+                   on_tick=on_tick)
+        self.assertGreaterEqual(len(ticks), 2)
+
+
 class CliUsageTests(unittest.TestCase):
     # All three refuse before the loop starts, so main() returns.
 

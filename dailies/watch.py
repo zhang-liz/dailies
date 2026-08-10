@@ -46,7 +46,8 @@ def _snapshot(root):
 
 def loop(root, interval=5.0, settle=None, shot=None, report_path=None,
          stop=None, emit=None, on_doomed=None, doom_floor=None,
-         doom_confidence=None, on_kill=None, **review_kwargs):
+         doom_confidence=None, on_kill=None, on_tick=None,
+         **review_kwargs):
     """Watch root until stop is set. Calls emit(take, clip) after each
     review. Files that already have a current sidecar are skipped, so
     restarting the watcher never re-reviews old takes.
@@ -56,7 +57,9 @@ def loop(root, interval=5.0, settle=None, shot=None, report_path=None,
     passed to emit carries an ephemeral _shot_doomed; on_doomed(shot,
     state) fires once per shot per run, after the take's own emit.
     on_kill(take, clip, takes) fires last on each fresh kill verdict, so
-    a regen hook acts after the human-facing lines have printed."""
+    a regen hook acts after the human-facing lines have printed.
+    on_tick() fires once per poll iteration, after the reviews; the
+    regen sweep retries deferred kills there."""
     stop = stop or threading.Event()
     if settle is None:
         settle = max(interval, 1.0)
@@ -100,6 +103,8 @@ def loop(root, interval=5.0, settle=None, shot=None, report_path=None,
                             on_doomed(s, st)
                 if on_kill and t["review"]["verdict"] == "kill":
                     on_kill(t, path, takes)
+        if on_tick and not stop.is_set():
+            on_tick()
         previous = current
         stop.wait(interval)
 
@@ -173,6 +178,45 @@ class Regenerator:
                 ledger.record_result(self.led, jid, "done")
                 changed = True
         return changed
+
+    def sweep_kills(self, root=None):
+        """Retry orphaned kills: killed sidecars with no child stub and
+        no ledger job for their take. Run once per poll tick (the first
+        tick doubles as restart recovery), so a kill whose submit was
+        skipped by the rate cap, or lost to a crash between review and
+        submit, is deferred to a later tick, never dropped for the
+        night. Returns the events for kills acted on; refusals stay
+        silent because they repeat every tick."""
+        if self.dry_run:
+            return []
+        if root is None:
+            root = os.path.dirname(os.path.abspath(self.path)) or "."
+        takes = {}
+        for dirpath, _, files in os.walk(root):
+            for f in files:
+                if f.endswith(".take.json"):
+                    clip = os.path.join(dirpath, f)[:-len(".take.json")]
+                    takes[clip] = take.load(clip)
+        submitted = set()
+        for t in takes.values():
+            if t.get("parent"):
+                submitted.add(t["parent"])
+        for job in self.led["jobs"].values():
+            if job.get("parent"):
+                submitted.add(job["parent"])
+        events = []
+        for clip in sorted(takes):
+            t = takes[clip]
+            if (t.get("review") or {}).get("verdict") != "kill":
+                continue
+            if t.get("take_id") in submitted:
+                continue
+            if not os.path.exists(clip):
+                continue  # the corpse was purged; nothing to reseed
+            ev = self.on_kill(t, clip, takes)
+            if ev["action"] != "skipped":
+                events.append(ev)
+        return events
 
     def on_kill(self, t, clip, takes):
         """Decide and act on one killed take. Returns the event dict the
@@ -296,17 +340,17 @@ def run(args):
             run_hook(args.on_doomed, shot, worst)
 
     on_kill = None
+    on_tick = None
     if args.regen:
         regenerator = Regenerator(
             args.regen, os.path.join(args.dir, "dailies-night.json"),
             want=want, dry_run=args.dry_run, rate=args.regen_rate)
 
-        def on_kill(t, clip, takes):
-            ev = regenerator.on_kill(t, clip, takes)
+        def print_regen(ev):
             if args.json:
                 print(json.dumps(ev), flush=True)
                 return
-            rel = os.path.relpath(clip, args.dir)
+            rel = os.path.relpath(ev["parent"], args.dir)
             if ev["action"] == "submitted":
                 msg = "submitted %s for %s; lands at %s" % (
                     ev["job"], rel,
@@ -322,6 +366,16 @@ def run(args):
             print("%s  REGEN    %s" % (time.strftime("%H:%M:%S"), msg),
                   flush=True)
 
+        def on_kill(t, clip, takes):
+            print_regen(regenerator.on_kill(t, clip, takes))
+
+        if not args.dry_run:
+            def on_tick():
+                # Deferred and orphaned kills get another chance each
+                # poll tick; the first tick is restart recovery.
+                for ev in regenerator.sweep_kills(args.dir):
+                    print_regen(ev)
+
     prices = None
     if getattr(args, "prices", None):
         from . import cost
@@ -333,7 +387,7 @@ def run(args):
     try:
         loop(args.dir, interval=args.interval, shot=args.shot,
              report_path=args.report, emit=emit, on_doomed=on_doomed,
-             on_kill=on_kill,
+             on_kill=on_kill, on_tick=on_tick,
              vlm_endpoint=args.vlm, vlm_model=args.vlm_model,
              rubric_path=args.rubric,
              api_key=os.environ.get("DAILIES_VLM_KEY"),
