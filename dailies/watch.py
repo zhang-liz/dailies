@@ -99,7 +99,9 @@ def run(args):
              vlm_endpoint=args.vlm, vlm_model=args.vlm_model,
              rubric_path=args.rubric,
              api_key=os.environ.get("DAILIES_VLM_KEY"),
-             samples=args.samples)
+             samples=args.samples,
+             strong_endpoint=args.vlm_strong,
+             strong_model=args.vlm_strong_model)
     except KeyboardInterrupt:
         pass
     return 0

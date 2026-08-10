@@ -297,6 +297,31 @@ def screen(clip, take, rules, endpoint, model, api_key=None, samples=1):
     return result
 
 
+def escalate(clip, take, rules, block, endpoint, model, api_key=None):
+    """Re-judge the rules the cheap judge was unsure about (split votes
+    or unparsable replies) on a stronger model, single-shot. The strong
+    verdict replaces those rules' defects and may kill; everything the
+    cheap judge was confident about is left alone. This is the cascade:
+    cheap model for clear cases, strong model only where it earns its
+    price (RouteLLM, arXiv:2406.18665)."""
+    names = sorted(set((block.get("uncertain") or [])
+                       + (block.get("unparsed") or [])))
+    subset = {n: rules[n] for n in names if n in rules}
+    if not subset:
+        return block
+    strong = screen(clip, take, subset, endpoint, model, api_key=api_key)
+    block["defects"] = _merge(
+        [d for d in block["defects"] if d["rule"] not in subset]
+        + strong["defects"])
+    block["uncertain"] = [n for n in (block.get("uncertain") or [])
+                          if n not in subset]
+    block["unparsed"] = ([n for n in (block.get("unparsed") or [])
+                          if n not in subset] + strong["unparsed"])
+    block["escalated"] = sorted(subset)
+    block["strong_engine"] = model
+    return block
+
+
 def kill_reasons(vlm_block, rules):
     """Which defects cross their rule's fail_at threshold. A defect the
     samples disagreed on (confidence below CONF_KILL) may not kill; it

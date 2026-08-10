@@ -21,9 +21,12 @@ FFMPEG = shutil.which("ffmpeg")
 class StubVlm(BaseHTTPRequestHandler):
     """Speaks both judge modes. Checklist rules get a yes on question 1
     (except physics.contact, all no); legacy prompt rules get one
-    severity-5 defect (except physics.contact, which passes)."""
+    severity-5 defect (except physics.contact, which passes). With
+    flaky set, anatomy.hands alternates yes/no across requests, so
+    repeat samples disagree."""
 
     requests = []
+    flaky = False
 
     def do_POST(self):
         body = json.loads(self.rfile.read(
@@ -31,7 +34,14 @@ class StubVlm(BaseHTTPRequestHandler):
         type(self).requests.append(body)
         system = body["messages"][0]["content"]
         text = body["messages"][1]["content"][0]["text"]
-        if '"answers"' in system:
+        if (type(self).flaky and '"answers"' in system
+                and "anatomy.hands" in text):
+            nth = sum(1 for r in type(self).requests if "anatomy.hands"
+                      in r["messages"][1]["content"][0]["text"])
+            content = json.dumps({"answers": [
+                {"q": 1, "yes": nth % 2 == 1, "t": 0.5, "note": "six"},
+                {"q": 2, "yes": False}]})
+        elif '"answers"' in system:
             if "physics.contact" in text:
                 content = ('{"answers": [{"q": 1, "yes": false}, '
                            '{"q": 2, "yes": false}]}')
@@ -79,6 +89,7 @@ class VlmTests(unittest.TestCase):
 
     def setUp(self):
         StubVlm.requests = []
+        StubVlm.flaky = False
         sidecar = take.sidecar_path(self.clip)
         if os.path.exists(sidecar):
             os.unlink(sidecar)
@@ -168,6 +179,36 @@ class VlmTests(unittest.TestCase):
         self.assertEqual(low[0]["confidence"], 0.5)
         self.assertEqual(vlm.kill_reasons(
             {"defects": low}, {"anatomy.hands": {"fail_at": 4}}), [])
+
+    def test_uncertain_rules_escalate_to_the_strong_judge(self):
+        class StrongStub(StubVlm):
+            requests = []
+            flaky = False
+        strong = ThreadingHTTPServer(("127.0.0.1", 0), StrongStub)
+        threading.Thread(target=strong.serve_forever,
+                         daemon=True).start()
+        self.addCleanup(strong.shutdown)
+        StubVlm.flaky = True
+        main(["review", self.clip, "--vlm", self.endpoint,
+              "--samples", "2",
+              "--vlm-strong",
+              "http://127.0.0.1:%d/v1" % strong.server_port,
+              "--vlm-strong-model", "big-vlm"])
+        r = take.load(self.clip)["review"]
+        v = r["vlm"]
+        # Only the rule the cheap judge split on went to the strong one.
+        self.assertEqual(v["escalated"], ["anatomy.hands"])
+        self.assertEqual(v["strong_engine"], "big-vlm")
+        self.assertEqual(len(StrongStub.requests), 1)
+        self.assertIn("anatomy.hands",
+                      StrongStub.requests[0]["messages"][1]["content"]
+                      [0]["text"])
+        # The strong judge's confident yes replaces the split vote and
+        # is allowed to kill.
+        hands = [d for d in v["defects"] if d["rule"] == "anatomy.hands"]
+        self.assertNotIn("confidence", hands[0])
+        self.assertEqual(v["uncertain"], [])
+        self.assertEqual(r["verdict"], "kill")
 
     def test_calibrated_threshold_replaces_fail_at(self):
         # Stub defects score 5 (anatomy.limbs question 1). A calibration
