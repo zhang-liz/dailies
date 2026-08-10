@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zhang-liz/dailies/raw/main/dailies/schemas/take.schema.json",
+  "title": "take.json sidecar",
+  "description": "One sidecar per generated clip, <clip>.take.json, next to the clip. SPEC.md is the prose contract; unknown keys are preserved, never stripped, so every object here deliberately admits additional properties.",
+  "type": "object",
+  "required": ["output"],
+  "properties": {
+    "take_id": {
+      "description": "Content hash of the clip file, algorithm-prefixed (sha256:, blake3:).",
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9_-]+:[0-9a-f]+$"
+    },
+    "shot": { "type": ["string", "null"] },
+    "parent": {
+      "description": "take_id this take was rerun or derived from.",
+      "type": ["string", "null"]
+    },
+    "created": { "type": ["string", "null"] },
+    "output": {
+      "type": "object",
+      "required": ["file"],
+      "properties": {
+        "file": { "type": "string" },
+        "fps": { "type": ["number", "null"] },
+        "frames": { "type": ["integer", "null"] },
+        "width": { "type": ["integer", "null"] },
+        "height": { "type": ["integer", "null"] }
+      }
+    },
+    "recipe": {
+      "description": "Generation tooling's block; null when a reviewer works on a bare clip.",
+      "type": ["object", "null"]
+    },
+    "review": {
+      "description": "Review tooling's block; null when a recorder works without a reviewer.",
+      "type": ["object", "null"],
+      "required": ["mechanical", "verdict"],
+      "properties": {
+        "mechanical": {
+          "type": "object",
+          "required": ["kill_reasons"],
+          "properties": {
+            "black_frames": { "type": "array" },
+            "freeze": { "type": "array" },
+            "scene_cuts": { "type": "array" },
+            "flicker_score": { "type": ["number", "null"] },
+            "motion_smoothness": { "type": ["number", "null"] },
+            "candidate_frames": { "type": "array", "items": { "type": "number" } },
+            "kill_reasons": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "vlm": {
+          "type": ["object", "null"],
+          "required": ["engine", "defects"],
+          "properties": {
+            "engine": { "type": "string" },
+            "samples": { "type": "integer" },
+            "defects": {
+              "type": "array",
+              "items": {
+                "description": "One finding, not one frame; t_end marks a span.",
+                "type": "object",
+                "required": ["rule", "severity"],
+                "properties": {
+                  "t": { "type": "number" },
+                  "t_end": { "type": "number" },
+                  "rule": { "type": "string" },
+                  "severity": { "type": "number" },
+                  "confidence": { "type": "number" },
+                  "note": { "type": "string" }
+                }
+              }
+            },
+            "skipped": { "type": "array", "items": { "type": "string" } },
+            "unparsed": { "type": "array", "items": { "type": "string" } },
+            "uncertain": { "type": "array", "items": { "type": "string" } },
+            "escalated": { "type": "array", "items": { "type": "string" } },
+            "strong_engine": { "type": "string" }
+          }
+        },
+        "verdict": { "enum": ["keep", "kill", "review"] },
+        "rank_in_shot": { "type": ["integer", "null"] }
+      }
+    },
+    "gold": {
+      "description": "The human's own verdict; written only by dailies gold add.",
+      "type": ["object", "null"],
+      "required": ["label"],
+      "properties": {
+        "label": { "enum": ["pass", "kill"] },
+        "labeled": { "type": "string" }
+      }
+    }
+  }
+}

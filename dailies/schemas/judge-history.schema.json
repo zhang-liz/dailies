@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zhang-liz/dailies/raw/main/dailies/schemas/judge-history.schema.json",
+  "title": "dailies-judge-check.json",
+  "description": "Append-only history of judge regression runs over the frozen gold set, written by dailies judge-check.",
+  "type": "object",
+  "required": ["runs"],
+  "properties": {
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["engine", "n", "agreement", "kappa", "false_kills", "missed_kills", "created"],
+        "properties": {
+          "engine": { "type": ["string", "null"] },
+          "samples": { "type": "integer" },
+          "n": { "type": "integer" },
+          "missing_clips": { "type": "integer" },
+          "agreement": { "type": "number" },
+          "kappa": { "type": "number" },
+          "false_kills": { "type": "integer" },
+          "missed_kills": { "type": "integer" },
+          "created": { "type": "string" }
+        }
+      }
+    }
+  }
+}

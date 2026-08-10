@@ -44,4 +44,4 @@ One sidecar file per generated clip, named `<clip>.take.json`, next to the clip.
 
 ## Status
 
-Draft, versioned by this repository's history. The reference producer and consumer of the `review` block is [dailies](README.md).
+Draft, versioned by this repository's history. The reference producer and consumer of the `review` block is [dailies](README.md). A JSON Schema for this file is checked in at [dailies/schemas/take.schema.json](dailies/schemas/take.schema.json); `dailies schema take` prints it. This prose stays the contract; the schema mirrors it for machines.

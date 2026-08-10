@@ -185,6 +185,16 @@ def cmd_report(args):
     return 0
 
 
+def cmd_schema(args):
+    """Print a published schema verbatim, so orchestrators pin the file
+    that ships with the version they run against."""
+    path = os.path.join(os.path.dirname(__file__), "schemas",
+                        args.name + ".schema.json")
+    with open(path) as f:
+        sys.stdout.write(f.read())
+    return 0
+
+
 def cmd_watch(args):
     from . import watch
     return watch.run(args)
@@ -292,6 +302,15 @@ def main(argv=None):
                     help="exit 1 when kappa lands below this")
     jc.add_argument("--json", action="store_true")
     jc.set_defaults(func=cmd_judge_check)
+
+    sc = sub.add_parser(
+        "schema",
+        help="print a published JSON Schema for a dailies file")
+    sc.add_argument("name",
+                    choices=["take", "calibration", "judge-history"],
+                    help="which contract: the take.json sidecar, the "
+                         "calibration file, or the judge-check history")
+    sc.set_defaults(func=cmd_schema)
 
     rp = sub.add_parser("report", help="write the static HTML morning report")
     rp.add_argument("dir", nargs="?", default=".",
