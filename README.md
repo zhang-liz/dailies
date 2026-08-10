@@ -148,6 +148,10 @@ dailies schema take                              # the published contract
 
 3 is deliberately clear of the shell's conventional 1 (generic failure) and 2 (usage error), so a kill is never confused with a crash.
 
+## Agent triage
+
+[skills/triage-dailies](skills/triage-dailies/SKILL.md) is a Claude Code skill that drives the whole morning ritual: summarize survivors and kills per shot, pull the defect frame behind every doubtful verdict and look at it, record your rulings as gold (only yours; it never labels on its own), and recalibrate once the gold set can carry it. Install by copying the directory into `~/.claude/skills/`. The JSON shapes it relies on are pinned by `tests/test_skill_envelope.py`.
+
 ## Tests
 
 ```sh
