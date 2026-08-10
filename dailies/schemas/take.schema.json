@@ -90,6 +90,14 @@
             "scrutinized": { "type": "array", "items": { "type": "string" } }
           }
         },
+        "audit": {
+          "description": "Badge on an auto-passed regen take routed to human review; selection hashes take_id at the recorded rate.",
+          "type": ["object", "null"],
+          "required": ["rate"],
+          "properties": {
+            "rate": { "type": "number" }
+          }
+        },
         "verdict": { "enum": ["keep", "kill", "review"] },
         "rank_in_shot": { "type": ["integer", "null"] }
       }

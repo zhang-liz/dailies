@@ -319,7 +319,8 @@ def run(args):
              samples=args.samples,
              strong_endpoint=args.vlm_strong,
              strong_model=args.vlm_strong_model,
-             prices=prices)
+             prices=prices,
+             audit_rate=args.audit_rate)
     except KeyboardInterrupt:
         pass
     return 0

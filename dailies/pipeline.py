@@ -41,7 +41,7 @@ def shot_for(clip, override=None):
 def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
                 vlm_model="qwen3-vl", rubric_path=None, api_key=None,
                 samples=1, calibration=None, strong_endpoint=None,
-                strong_model=None, prices=None):
+                strong_model=None, prices=None, audit_rate=None):
     """Run the funnel on one clip and save its sidecar. Returns
     (take, cached): cached is True when the content hash matched an
     existing review and nothing was recomputed."""
@@ -118,6 +118,15 @@ def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
                 if reasons:
                     r["mechanical"]["kill_reasons"].extend(reasons)
                     r["verdict"] = "kill"
+        if audit_rate is None:
+            audit_rate = defense.AUDIT_RATE
+        if (t.get("parent") and r["verdict"] != "kill"
+                and defense.audit_pick(t["take_id"], audit_rate)):
+            # Audit sampling: a deterministic slice of auto-passed
+            # regen takes goes to human eyes; rising disagreement on
+            # audited takes is the judge-blind-spot alarm.
+            r["audit"] = {"rate": audit_rate}
+            r["verdict"] = "review"
         cached = False
 
     if prices is not None:
