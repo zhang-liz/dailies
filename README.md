@@ -74,6 +74,17 @@ dailies brief ./takes --json
 
 `brief` answers "why does shot-07 keep dying" from the sidecars alone: per shot, take and kill counts with yield, a kill-reason histogram split mechanical vs rule, per-rule stats (defect count, takes affected, mean severity and confidence, one example defect with its file and timestamp), the ranked survivors, lineage depth from `parent` chains, and the distinct seeds, models, and lora strengths across takes that carry `recipe` blocks. Pure deterministic aggregation, no LLM calls, and no causal claims: it reports counts, the reasoning stays with you or your agent. Shots without recipes still get a full dossier.
 
+## The rough cut
+
+After triage, watch the survivors as one file instead of a folder:
+
+```sh
+dailies assemble ./takes -o cut.mp4
+dailies assemble ./takes -o cut.mp4 --shots reel.txt --alts 1
+```
+
+The best non-kill take per shot is normalized to one frame rate and size (the first cut take's, or `--fps`/`--scale`), slated with shot id, short take id, verdict, and the top defect rule when the verdict is review, then joined with the concat demuxer. Shots cut in name order; a `--shots` file (one shot id per line, `#` comments) sets the order instead, with unlisted shots following in name order. `--alts N` appends the next N ranked takes per shot after the best one. A CSV next to the cut maps each segment's record in/out timecodes back to its source file and take id, so acting on what you just watched is one lookup. Concat and slates only, no trims, no audio. Slates need an ffmpeg built with drawtext (libfreetype); without it the cut still assembles, unslated.
+
 ## Local judges
 
 Any OpenAI-compatible endpoint works, so open-weight judges trained specifically for generated video plug in with no code: serve [VideoScore2](https://arxiv.org/abs/2509.22799) or [VideoPhy-AutoEval](https://github.com/Hritikbansal/videophy) behind vLLM's OpenAI server and point `--vlm` at it. A GPU-poor setup can run the mechanical funnel alone; it still kills the cheap deaths.
