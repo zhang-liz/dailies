@@ -102,6 +102,20 @@ class MechanicalTests(unittest.TestCase):
         self.assertGreaterEqual(os.path.getmtime(
             take.sidecar_path(self.normal)), before)
 
+    def test_flicker_masks_genuine_motion(self):
+        # Mostly static clip with one burst of fast action: the luma
+        # jumps during the burst are motion, not flicker.
+        static = [(i * 0.1, 100.0, 1.0) for i in range(20)]
+        burst = [(2.0 + i * 0.1, 100.0 + 40 * (i % 2), 30.0)
+                 for i in range(4)]
+        self.assertLess(mechanical.flicker_score(static + burst), 0.01)
+
+    def test_flicker_throughout_still_counts(self):
+        # Luma oscillates on every frame; the median YDIF rises with it,
+        # so the mask leaves the flicker visible.
+        series = [(i * 0.1, 100.0 + 30 * (i % 2), 25.0) for i in range(20)]
+        self.assertGreater(mechanical.flicker_score(series), 0.05)
+
     def test_sidecar_preserves_foreign_blocks(self):
         # slate owns "recipe"; a review pass must not clobber it.
         t = take.load(self.normal)
