@@ -75,6 +75,8 @@ def extract_frames(clip, times):
 
 
 def _request(endpoint, model, api_key, messages, temperature=0):
+    """Returns (content, usage). Usage is the endpoint's own token
+    count, zeros when the server reports none; billing needs it."""
     body = json.dumps({
         "model": model,
         "messages": messages,
@@ -95,9 +97,16 @@ def _request(endpoint, model, api_key, messages, temperature=0):
     except urllib.error.URLError as e:
         raise VlmError("VLM endpoint unreachable: %s" % e)
     try:
-        return data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError):
         raise VlmError("unexpected response shape: %s" % str(data)[:200])
+    u = data.get("usage") or {}
+    try:
+        usage = {"prompt_tokens": int(u.get("prompt_tokens") or 0),
+                 "completion_tokens": int(u.get("completion_tokens") or 0)}
+    except (TypeError, ValueError):
+        usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    return content, usage
 
 
 def _parse_defects(text):
@@ -219,7 +228,9 @@ def _merge(defects):
 def screen(clip, take, rules, endpoint, model, api_key=None, samples=1):
     """Run every applicable rubric rule over the clip's candidate frames.
     Returns the take.json "vlm" block. With samples > 1, checklist rules
-    are asked that many times and disagreement becomes confidence."""
+    are asked that many times and disagreement becomes confidence.
+    The block's "usage" records call counts and tokens, total and per
+    rule, so cost telemetry has measurements instead of estimates."""
     mech = ((take.get("review") or {}).get("mechanical") or {})
     times = mech.get("candidate_frames") or [0.0]
     frames = extract_frames(clip, times)
@@ -234,9 +245,22 @@ def screen(clip, take, rules, endpoint, model, api_key=None, samples=1):
         ", ".join(str(t) for t, _ in frames))
 
     result = {"engine": model, "defects": [], "skipped": [],
-              "unparsed": [], "uncertain": []}
+              "unparsed": [], "uncertain": [],
+              "usage": {"calls": 0, "prompt_tokens": 0,
+                        "completion_tokens": 0, "rules": {}}}
     if samples > 1:
         result["samples"] = samples
+
+    def spend(name, u):
+        # Every request is billed to its rule, parsed or not; unparsed
+        # replies cost tokens too.
+        per = result["usage"]["rules"].setdefault(
+            name, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0})
+        for row in (result["usage"], per):
+            row["calls"] += 1
+            row["prompt_tokens"] += u["prompt_tokens"]
+            row["completion_tokens"] += u["completion_tokens"]
+
     for name, rule in sorted(rules.items()):
         context = rubric_mod.context_for(rule, take)
         if context is None:
@@ -269,9 +293,11 @@ def screen(clip, take, rules, endpoint, model, api_key=None, samples=1):
             temperature = 0 if k == 1 else SAMPLE_TEMPERATURE
             votes = []
             for _ in range(k):
-                answers = _parse_answers(_request(
+                text_out, u = _request(
                     endpoint, model, api_key, messages,
-                    temperature=temperature))
+                    temperature=temperature)
+                spend(name, u)
+                answers = _parse_answers(text_out)
                 if answers is not None:
                     votes.append(answers)
             if not votes:
@@ -284,8 +310,9 @@ def screen(clip, take, rules, endpoint, model, api_key=None, samples=1):
         else:
             # Legacy severity rules stay single-shot; their model-chosen
             # severities have no clean vote to aggregate.
-            defects = _parse_defects(_request(
-                endpoint, model, api_key, messages))
+            text_out, u = _request(endpoint, model, api_key, messages)
+            spend(name, u)
+            defects = _parse_defects(text_out)
             if defects is None:
                 result["unparsed"].append(name)
                 continue
@@ -319,6 +346,9 @@ def escalate(clip, take, rules, block, endpoint, model, api_key=None):
                           if n not in subset] + strong["unparsed"])
     block["escalated"] = sorted(subset)
     block["strong_engine"] = model
+    # Strong-model spend stays separate from the cheap judge's usage;
+    # the two engines are priced differently.
+    block["strong_usage"] = strong["usage"]
     return block
 
 
