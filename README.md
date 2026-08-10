@@ -8,9 +8,9 @@ Built so far: stage 1 of the funnel (mechanical, CPU only), stage 2 (VLM screeni
 
 Four takes from a current video model. The prompt requires a chalkboard sign reading exactly "HAPPY HOUR 5-7PM". Two of them, playable; watch the egg and the sign:
 
-https://github.com/zhang-liz/dailies/raw/main/docs/media/bar-take-003.mp4
+https://github.com/user-attachments/assets/fc72ebaf-8bf8-488f-8d8e-889cbeb24b0c
 
-https://github.com/zhang-liz/dailies/raw/main/docs/media/bar-take-004.mp4
+https://github.com/user-attachments/assets/42b4e097-2685-4e5c-8d49-e4e546f24704
 
 (the other two: [take-001](docs/media/bar-take-001.mp4), [take-002](docs/media/bar-take-002.mp4))
 
