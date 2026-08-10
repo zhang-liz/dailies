@@ -487,6 +487,20 @@ def main(argv=None):
                    help="run CMD SHOT WORST_SIDECAR when a shot trips "
                         "the doomed breaker; without it the flag is "
                         "report-only")
+    w.add_argument("--regen", metavar="DRIVER_CMD",
+                   help="resubmit each killed take through this driver "
+                        "command (docs/DRIVERS.md contract) with a "
+                        "fresh seed; run state lives in "
+                        "DIR/dailies-night.json")
+    w.add_argument("--want", action="append", metavar="SHOT=K",
+                   help="passing takes wanted for a shot before its "
+                        "regens stop (repeatable; default 1 per shot)")
+    w.add_argument("--dry-run", action="store_true",
+                   help="print the regen each kill would trigger "
+                        "without submitting anything")
+    w.add_argument("--regen-rate", type=int, default=6, metavar="N",
+                   help="max driver submissions per minute across all "
+                        "shots (default 6)")
     w.set_defaults(func=cmd_watch)
 
     args = p.parse_args(argv)

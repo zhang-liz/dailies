@@ -234,6 +234,16 @@ def run(args):
     if not os.path.isdir(args.dir):
         print("not a directory: %s" % args.dir, file=sys.stderr)
         return 1
+    try:
+        want = parse_want(args.want)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    if not args.regen and (args.dry_run or want):
+        print("%s needs --regen"
+              % ("--dry-run" if args.dry_run else "--want"),
+              file=sys.stderr)
+        return 2
 
     def emit(t, clip):
         r = t["review"]
@@ -264,6 +274,33 @@ def run(args):
         if args.on_doomed:
             run_hook(args.on_doomed, shot, worst)
 
+    on_kill = None
+    if args.regen:
+        regenerator = Regenerator(
+            args.regen, os.path.join(args.dir, "dailies-night.json"),
+            want=want, dry_run=args.dry_run, rate=args.regen_rate)
+
+        def on_kill(t, clip, takes):
+            ev = regenerator.on_kill(t, clip, takes)
+            if args.json:
+                print(json.dumps(ev), flush=True)
+                return
+            rel = os.path.relpath(clip, args.dir)
+            if ev["action"] == "submitted":
+                msg = "submitted %s for %s; lands at %s" % (
+                    ev["job"], rel,
+                    os.path.relpath(ev["clip"], args.dir))
+            elif ev["action"] == "dry-run":
+                msg = "would resubmit %s with seeds %s" % (
+                    rel, json.dumps(ev["seeds"]))
+            elif ev["action"] == "driver-error":
+                msg = "driver failed (%d of %d): %s" % (
+                    ev["failures"], ev["fail_block"], ev["error"])
+            else:
+                msg = "skipped %s: %s" % (rel, ev["reason"])
+            print("%s  REGEN    %s" % (time.strftime("%H:%M:%S"), msg),
+                  flush=True)
+
     prices = None
     if getattr(args, "prices", None):
         from . import cost
@@ -275,6 +312,7 @@ def run(args):
     try:
         loop(args.dir, interval=args.interval, shot=args.shot,
              report_path=args.report, emit=emit, on_doomed=on_doomed,
+             on_kill=on_kill,
              vlm_endpoint=args.vlm, vlm_model=args.vlm_model,
              rubric_path=args.rubric,
              api_key=os.environ.get("DAILIES_VLM_KEY"),
