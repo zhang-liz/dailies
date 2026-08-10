@@ -98,7 +98,7 @@ class DoomedReportTests(unittest.TestCase):
         # the doomed shot's heading gets the badge, the healthy one not
         self.assertEqual(page.count('<span class="doomed">doomed</span>'),
                          1)
-        self.assertNotIn("—", page)
+        self.assertNotIn("\u2014", page)
 
     def test_no_doomed_line_when_all_healthy(self):
         self.sidecar("shot-01", "good.mp4", "review", 1)
