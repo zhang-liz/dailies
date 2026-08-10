@@ -10,6 +10,8 @@ import json
 import os
 import re
 
+from . import breaker
+
 CSS = """
 :root { color-scheme: dark; }
 * { box-sizing: border-box; margin: 0; }
@@ -92,6 +94,8 @@ summary { cursor: pointer; color: #9a9aa3; font-size: 14px; }
 .legend i { position: static; transform: none; display: inline-block;
   width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 12px;
   vertical-align: -1px; }
+.doomed { font-size: 12px; letter-spacing: .06em; padding: 2px 7px;
+  border-radius: 99px; background: #3a1d1d; color: #d87f7f; }
 """
 
 JS = """
@@ -273,26 +277,42 @@ def build(root, output):
         by_shot.setdefault(t.get("shot") or "untagged", []).append(t)
 
     sections = []
+    doomed_shots = []
     for shot in sorted(by_shot):
         group = sorted(by_shot[shot], key=lambda t: (
             (t.get("review") or {}).get("rank_in_shot") or 10**6))
         kills = sum(1 for t in group
                     if (t.get("review") or {}).get("verdict") == "kill")
+        # The breaker recomputes from sidecars, so a report built hours
+        # after the watcher stopped flags the same shots.
+        state = breaker.assess([t["review"] for t in group
+                                if t.get("review")])
+        badge = ""
+        if state["doomed"]:
+            doomed_shots.append(shot)
+            badge = ' <span class="doomed">doomed</span>'
         # The heading is linkable (report.html#shot-07): slugged shot name.
         slug = re.sub(r"[^a-z0-9]+", "-", shot.lower()).strip("-") or "shot"
-        sections.append('<h2 id="%s">%s · %d takes · %d killed</h2>'
+        sections.append('<h2 id="%s">%s · %d takes · %d killed%s</h2>'
                         '<div class="takes">%s</div>' % (
                             slug, html.escape(shot), len(group), kills,
+                            badge,
                             "".join(_take_card(t, report_dir)
                                     for t in group)))
 
+    doomed_line = ""
+    if doomed_shots:
+        doomed_line = (' <span class="doomed">doomed: %s</span> mechanics '
+                       "kill nearly every take there; change the recipe "
+                       "before generating more."
+                       % html.escape(", ".join(doomed_shots)))
     killed = sum(1 for t in takes
                  if (t.get("review") or {}).get("verdict") == "kill")
     doc = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>dailies report</title><style>%s</style></head><body>
 <h1>Dailies</h1>
-<div class="sub">%d takes reviewed, %d killed, %d to watch.
+<div class="sub">%d takes reviewed, %d killed, %d to watch.%s
 Click any timestamp or timeline dot to jump the clip to that moment.</div>
 <div class="legend">timeline:<i class="span black"></i>black
 <i class="span freeze"></i>frozen <i class="cut"></i>cut
@@ -303,7 +323,7 @@ Click any timestamp or timeline dot to jump the clip to that moment.</div>
 <i class="defect adherence"></i>adherence</div>
 %s
 <script>%s</script></body></html>""" % (
-        CSS, len(takes), killed, len(takes) - killed,
+        CSS, len(takes), killed, len(takes) - killed, doomed_line,
         "\n".join(sections), JS)
     with open(output, "w") as f:
         f.write(doc)
