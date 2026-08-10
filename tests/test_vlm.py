@@ -169,6 +169,21 @@ class VlmTests(unittest.TestCase):
         self.assertEqual(vlm.kill_reasons(
             {"defects": low}, {"anatomy.hands": {"fail_at": 4}}), [])
 
+    def test_calibrated_threshold_replaces_fail_at(self):
+        # Stub defects score 5 (anatomy.limbs question 1). A calibration
+        # with lambda above that must veto the fail_at kill; one below
+        # must kill with the guarantee in the reason.
+        for lam, expect in ((5.5, "review"), (2.0, "kill")):
+            cal = os.path.join(self.dir, "cal.json")
+            with open(cal, "w") as f:
+                json.dump({"alpha": 0.05, "lambda": lam}, f)
+            main(["review", self.clip, "--vlm", self.endpoint,
+                  "--force", "--calibration", cal])
+            r = take.load(self.clip)["review"]
+            self.assertEqual(r["verdict"], expect, "lambda=%s" % lam)
+        self.assertTrue(any("false-kill rate" in k
+                            for k in r["mechanical"]["kill_reasons"]))
+
     def test_defect_parser_tolerates_prose(self):
         self.assertEqual(
             vlm._parse_defects('yes {"defects":[{"t":1,"severity":9,'

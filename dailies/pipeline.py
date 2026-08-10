@@ -40,7 +40,7 @@ def shot_for(clip, override=None):
 
 def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
                 vlm_model="qwen3-vl", rubric_path=None, api_key=None,
-                samples=1):
+                samples=1, calibration=None):
     """Run the funnel on one clip and save its sidecar. Returns
     (take, cached): cached is True when the content hash matched an
     existing review and nothing was recomputed."""
@@ -67,10 +67,23 @@ def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
         rules = rubric_mod.load(rubric_path)
         r["vlm"] = vlm.screen(clip, t, rules, vlm_endpoint, vlm_model,
                               api_key=api_key, samples=samples)
-        reasons = vlm.kill_reasons(r["vlm"], rules)
-        if reasons:
-            r["mechanical"]["kill_reasons"].extend(reasons)
-            r["verdict"] = "kill"
+        if calibration is not None:
+            # Calibrated mode: the conformal threshold replaces fail_at,
+            # and the false-kill guarantee replaces judgment calls.
+            from . import calibrate as calibrate_mod
+            s = calibrate_mod.kill_score(t)
+            lam = calibration.get("lambda")
+            if lam is not None and s > lam:
+                r["mechanical"]["kill_reasons"].append(
+                    "calibrated kill score %.2f > %.2f "
+                    "(false-kill rate <= %s)" % (
+                        s, lam, calibration.get("alpha")))
+                r["verdict"] = "kill"
+        else:
+            reasons = vlm.kill_reasons(r["vlm"], rules)
+            if reasons:
+                r["mechanical"]["kill_reasons"].extend(reasons)
+                r["verdict"] = "kill"
         cached = False
 
     take.save(clip, t)

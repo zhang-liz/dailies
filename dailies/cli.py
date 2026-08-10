@@ -9,13 +9,17 @@ from . import __version__, mechanical, pipeline, vlm
 
 
 def _vlm_kwargs(args):
-    return {
+    kwargs = {
         "vlm_endpoint": args.vlm,
         "vlm_model": args.vlm_model,
         "rubric_path": args.rubric,
         "api_key": os.environ.get("DAILIES_VLM_KEY"),
         "samples": args.samples,
     }
+    if getattr(args, "calibration", None):
+        from . import calibrate
+        kwargs["calibration"] = calibrate.load(args.calibration)
+    return kwargs
 
 
 def cmd_review(args):
@@ -72,6 +76,28 @@ def cmd_gold(args):
     return 0
 
 
+def cmd_calibrate(args):
+    from . import calibrate
+    cal = calibrate.calibrate(args.dir, alpha=args.alpha)
+    calibrate.save(cal, args.output)
+    if args.json:
+        print(json.dumps(cal, indent=2))
+        return 0
+    if cal["lambda"] is None:
+        print("not enough gold-pass takes: %d labeled, %d needed for "
+              "alpha=%s" % (cal["n_pass"], cal["needed"], cal["alpha"]))
+        print("wrote %s (threshold disabled until recalibrated)"
+              % args.output)
+        return 1
+    print("kill threshold %.2f: false-kill rate <= %s on %d gold-pass "
+          "takes" % (cal["lambda"], cal["alpha"], cal["n_pass"]))
+    if "kill_recall" in cal:
+        print("catches %.0f%% of your %d gold kills"
+              % (100 * cal["kill_recall"], cal["n_kill"]))
+    print("wrote %s; use it with review --calibration" % args.output)
+    return 0
+
+
 def cmd_report(args):
     from . import report
     out = report.build(args.dir, args.output)
@@ -106,6 +132,10 @@ def main(argv=None):
                         help="ask the judge K times per rule; "
                              "disagreement becomes confidence, and an "
                              "unagreed defect cannot kill (default 1)")
+        sp.add_argument("--calibration", metavar="FILE",
+                        help="calibration from `dailies calibrate`; "
+                             "its conformal threshold replaces the "
+                             "rubric's fail_at kills")
 
     rv = sub.add_parser("review", help="run the funnel on clips")
     rv.add_argument("paths", nargs="+", help="clips, globs, or directories")
@@ -126,6 +156,18 @@ def main(argv=None):
     gl.add_argument("dir", nargs="?", default=".")
     gl.add_argument("--json", action="store_true")
     g.set_defaults(func=cmd_gold)
+
+    cal = sub.add_parser(
+        "calibrate",
+        help="set the kill threshold from your gold labels, with a "
+             "conformal false-kill guarantee")
+    cal.add_argument("dir", nargs="?", default=".",
+                     help="directory of gold-labeled, reviewed takes")
+    cal.add_argument("--alpha", type=float, default=0.05,
+                     help="max false-kill rate to guarantee (default 0.05)")
+    cal.add_argument("-o", "--output", default="dailies-calibration.json")
+    cal.add_argument("--json", action="store_true")
+    cal.set_defaults(func=cmd_calibrate)
 
     rp = sub.add_parser("report", help="write the static HTML morning report")
     rp.add_argument("dir", nargs="?", default=".",
