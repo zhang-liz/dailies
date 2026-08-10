@@ -98,7 +98,8 @@ def rerank(clips):
         severity = sum(d["severity"] for d in
                        (r.get("vlm") or {}).get("defects", []))
         return (r["verdict"] == "kill", severity, defects,
-                m["flicker_score"] or 0)
+                m["flicker_score"] or 0,
+                -(m.get("motion_smoothness") or 0))
 
     for group in by_shot.values():
         for i, (clip, t) in enumerate(sorted(group, key=key), start=1):
