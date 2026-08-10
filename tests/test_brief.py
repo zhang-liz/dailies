@@ -98,6 +98,19 @@ class BriefTests(unittest.TestCase):
         self.assertEqual((b["n_takes"], b["kills"], b["yield"]),
                          (1, 0, 1.0))
 
+    def test_kill_class_pins_the_reason_grammar(self):
+        self.assertEqual(
+            brief.kill_class("anatomy.hands severity 3 at 1.2s: six"),
+            ("rule", "anatomy.hands"))
+        self.assertEqual(
+            brief.kill_class("calibrated kill score 4.10 > 3.20 "
+                             "(false-kill rate <= 0.05)"),
+            ("rule", "calibrated"))
+        self.assertEqual(brief.kill_class("black for 4.0s of 4.0s"),
+                         ("mechanical", "black"))
+        self.assertEqual(brief.kill_class("probe: moov atom missing"),
+                         ("mechanical", "probe"))
+
     def test_kill_histogram_splits_mechanical_vs_rule(self):
         a = self.shot("shot-a")
         self.assertEqual(a["kill_reasons"],
