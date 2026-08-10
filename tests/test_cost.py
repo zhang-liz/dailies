@@ -17,7 +17,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from dailies import take, vlm  # noqa: E402
+from dailies import cost, take, vlm  # noqa: E402
 from dailies.cli import main  # noqa: E402
 
 FFMPEG = shutil.which("ffmpeg")
@@ -305,6 +305,40 @@ class PriceTests(StubEndpointCase):
             rc = main(["watch", self.dir, "--prices", path])
         self.assertEqual(rc, 0)
         self.assertEqual(loop.call_args[1]["prices"]["clip"], 0.25)
+
+
+class ScrutinyPricingTests(unittest.TestCase):
+    """cost.block over fabricated blocks: scrutiny spend counts."""
+
+    @staticmethod
+    def usage(calls):
+        return {"calls": calls, "prompt_tokens": calls * 100,
+                "completion_tokens": calls * 20}
+
+    def test_scrutiny_usage_is_priced_like_the_first_pass(self):
+        prices = {"models": {"cheap": {"input": 2.0, "output": 10.0},
+                             "strong": {"input": 20.0, "output": 100.0}}}
+        t = {"review": {
+            "vlm": {"engine": "cheap", "usage": self.usage(2)},
+            "scrutiny": {"engine": "cheap", "usage": self.usage(3),
+                         "strong_engine": "strong",
+                         "strong_usage": self.usage(1),
+                         "scrutinized": ["anatomy.hands"]}}}
+        c = cost.block(t, prices)
+        cheap_per = (100 * 2.0 + 20 * 10.0) / 1e6
+        strong_per = (100 * 20.0 + 20 * 100.0) / 1e6
+        self.assertAlmostEqual(c["vlm_usd"],
+                               5 * cheap_per + strong_per, places=9)
+        self.assertEqual(c["total_usd"], c["vlm_usd"])
+        self.assertNotIn("unpriced_models", c)
+
+    def test_unpriced_scrutiny_engine_is_named(self):
+        t = {"review": {"vlm": None,
+                        "scrutiny": {"engine": "mystery",
+                                     "usage": self.usage(1)}}}
+        c = cost.block(t, {"models": {}})
+        self.assertEqual(c["vlm_usd"], 0.0)
+        self.assertEqual(c["unpriced_models"], ["mystery"])
 
 
 @unittest.skipUnless(FFMPEG, "ffmpeg not on PATH")
