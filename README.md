@@ -45,7 +45,7 @@ Python 3.9+, ffmpeg and ffprobe on PATH. No Python dependencies; `blake3` is pic
 ## Install
 
 ```sh
-pip install git+https://github.com/zhang-liz/dailies
+pip install video-dailies
 ```
 
 Or run straight from a checkout with `python3 -m dailies`; there is nothing to build.
