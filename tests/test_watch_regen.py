@@ -8,6 +8,7 @@ import json
 import glob
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -317,6 +318,133 @@ class ReconcileOnStartTests(RegenBase):
         job = ledger.load(self.ledger_path)["jobs"]["j1"]
         self.assertEqual(job["state"], "done")
         self.assertTrue(job["resolved"])
+
+
+def gen(path, lavfi, seconds=1, fps=8):
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+         "-i", lavfi, "-t", str(seconds), "-r", str(fps),
+         "-pix_fmt", "yuv420p", path],
+        check=True)
+
+
+def wait_for(cond, timeout=30):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if cond():
+            return True
+        time.sleep(0.1)
+    return False
+
+
+@unittest.skipUnless(FFMPEG, "ffmpeg not on PATH")
+class WatchRegenLoopTests(unittest.TestCase):
+    # The whole circle in one live loop: land, review, kill, mutate,
+    # submit, land again, review again, lineage intact.
+
+    def test_kill_regen_review_closes_the_loop(self):
+        d = tempfile.mkdtemp(prefix="dailies-watch-regen-e2e-")
+        self.addCleanup(shutil.rmtree, d)
+        root = os.path.join(d, "takes")
+        shot_dir = os.path.join(root, "shot-07")
+        os.makedirs(shot_dir)
+        spool = os.path.join(d, "spool")
+        os.makedirs(spool)
+        src = os.path.join(d, "src.mp4")  # outside the watched root
+        gen(src, "testsrc2=size=320x240:rate=8")
+        driver = write_instant_driver(d, spool, src)
+        ledger_path = os.path.join(d, "dailies-night.json")
+        rgn = watch.Regenerator(driver, ledger_path)
+
+        events, regen_events = [], []
+        stop = threading.Event()
+        thread = threading.Thread(
+            target=watch.loop, args=(root,),
+            kwargs={"interval": 0.2, "settle": 0.6, "stop": stop,
+                    "emit": lambda t, c: events.append((t, c)),
+                    "on_kill": lambda t, c, takes:
+                        regen_events.append(rgn.on_kill(t, c, takes))},
+            daemon=True)
+        thread.start()
+
+        def halt():
+            stop.set()
+            thread.join(timeout=10)
+        self.addCleanup(halt)
+
+        black = os.path.join(shot_dir, "take-001.mp4")
+        gen(black, "color=c=black:size=320x240:rate=8")
+        self.assertTrue(wait_for(lambda: len(regen_events) == 1))
+        ev = regen_events[0]
+        self.assertEqual(ev["action"], "submitted")
+        self.assertEqual(ev["shot"], "shot-07")
+        self.assertEqual(ev["parent"], black)
+        new_clip = ev["clip"]
+        self.assertEqual(os.path.dirname(new_clip), shot_dir)
+        # The driver landed the clip in the watched dir; the ordinary
+        # settle-review path must pick it up with no extra machinery.
+        self.assertTrue(wait_for(
+            lambda: bool(take.load(new_clip).get("review"))))
+        t = take.load(new_clip)
+        self.assertEqual(t["review"]["verdict"], "review")
+        self.assertEqual(t["parent"], take.load(black)["take_id"])
+        self.assertEqual(t["shot"], "shot-07")
+        self.assertEqual(t["regen"]["job"], ev["job"])
+        self.assertEqual(t["recipe"]["seeds"], ev["seeds"])
+        self.assertTrue(wait_for(
+            lambda: take.load(new_clip)["review"]
+            .get("rank_in_shot") == 1))
+        self.assertEqual(take.load(black)["review"]["rank_in_shot"], 2)
+        # The survivor's review verdict must not trigger a second
+        # submission, and the job survives in the ledger.
+        self.assertTrue(wait_for(lambda: len(events) == 2))
+        self.assertEqual(len(regen_events), 1)
+        job = ledger.load(ledger_path)["jobs"][ev["job"]]
+        self.assertEqual(job["clip"], new_clip)
+        self.assertEqual(job["parent"], take.load(black)["take_id"])
+
+
+@unittest.skipUnless(FFMPEG, "ffmpeg not on PATH")
+class WatchCliRegenDryRunTests(unittest.TestCase):
+    # Through the CLI: --dry-run prints the intended mutation as a JSON
+    # event line and touches neither driver nor ledger.
+
+    def test_dry_run_emits_event_and_submits_nothing(self):
+        d = tempfile.mkdtemp(prefix="dailies-cli-dry-run-")
+        self.addCleanup(shutil.rmtree, d)
+        shot_dir = os.path.join(d, "shot-07")
+        os.makedirs(shot_dir)
+        gen(os.path.join(shot_dir, "take-001.mp4"),
+            "color=c=black:size=320x240:rate=8")
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "dailies", "watch", d,
+             "--interval", "0.2", "--json",
+             "--regen", "/no/such/driver", "--dry-run"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True,
+            cwd=os.path.join(os.path.dirname(__file__), ".."))
+        lines = []
+
+        def reader():
+            for line in proc.stdout:
+                lines.append(json.loads(line))
+
+        threading.Thread(target=reader, daemon=True).start()
+        try:
+            self.assertTrue(wait_for(
+                lambda: any(l.get("event") == "regen" for l in lines),
+                timeout=60))
+        finally:
+            proc.terminate()
+            proc.wait(timeout=10)
+        ev = [l for l in lines if l.get("event") == "regen"][0]
+        self.assertEqual(ev["action"], "dry-run")
+        self.assertEqual(ev["shot"], "shot-07")
+        self.assertTrue(ev["parent"].endswith("take-001.mp4"))
+        self.assertEqual(list(ev["seeds"]), ["seed"])
+        self.assertFalse(os.path.exists(
+            os.path.join(d, "dailies-night.json")))
+        self.assertEqual(len(os.listdir(shot_dir)), 2)  # clip + sidecar
 
 
 if __name__ == "__main__":
