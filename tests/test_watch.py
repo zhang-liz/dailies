@@ -179,6 +179,62 @@ class DoomedBreakerTests(unittest.TestCase):
         self.assertEqual(self.doomed, [])
 
 
+@unittest.skipUnless(FFMPEG, "ffmpeg not on PATH")
+class WatchCliDoomedTests(unittest.TestCase):
+    # End to end through the CLI at default thresholds: eight black
+    # clips, one doomed event line, one hook invocation.
+
+    def test_json_lines_and_hook(self):
+        d = tempfile.mkdtemp(prefix="dailies-cli-doom-test-")
+        try:
+            shot = os.path.join(d, "shot-13")
+            os.makedirs(shot)
+            for i in range(8):
+                gen(os.path.join(shot, "dead-%d.mp4" % i),
+                    "color=c=black:size=320x240:rate=8")
+            hook_out = os.path.join(d, "hook.txt")
+            script = os.path.join(d, "hook.py")
+            with open(script, "w") as f:
+                f.write("import sys\n"
+                        "open(%r, 'w').write('|'.join(sys.argv[1:]))\n"
+                        % hook_out)
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "dailies", "watch", d,
+                 "--interval", "0.2", "--json",
+                 "--on-doomed", '"%s" "%s"' % (sys.executable, script)],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True,
+                cwd=os.path.join(os.path.dirname(__file__), ".."))
+            lines = []
+
+            def reader():
+                for line in proc.stdout:
+                    lines.append(json.loads(line))
+
+            threading.Thread(target=reader, daemon=True).start()
+            try:
+                self.assertTrue(wait_for(
+                    lambda: any(l.get("event") == "doomed"
+                                for l in lines), timeout=60))
+            finally:
+                proc.terminate()
+                proc.wait(timeout=10)
+            event = [l for l in lines if l.get("event") == "doomed"][0]
+            self.assertEqual(event["shot"], "shot-13")
+            self.assertEqual(event["mechanical_kills"], 8)
+            self.assertTrue(event["worst_sidecar"].endswith(".take.json"))
+            take_lines = [l for l in lines if "clip" in l]
+            self.assertFalse(take_lines[0]["shot_doomed"])
+            self.assertTrue(take_lines[-1]["shot_doomed"])
+            self.assertTrue(wait_for(
+                lambda: os.path.exists(hook_out)
+                and "|" in open(hook_out).read()))
+            self.assertEqual(open(hook_out).read(),
+                             "shot-13|" + event["worst_sidecar"])
+        finally:
+            shutil.rmtree(d)
+
+
 class HookTests(unittest.TestCase):
     def test_hook_receives_shot_and_sidecar(self):
         d = tempfile.mkdtemp(prefix="dailies-hook-test-")
