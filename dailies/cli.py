@@ -15,6 +15,8 @@ def _vlm_kwargs(args):
         "rubric_path": args.rubric,
         "api_key": os.environ.get("DAILIES_VLM_KEY"),
         "samples": args.samples,
+        "strong_endpoint": args.vlm_strong,
+        "strong_model": args.vlm_strong_model,
     }
     if getattr(args, "calibration", None):
         from . import calibrate
@@ -132,6 +134,13 @@ def main(argv=None):
                         help="ask the judge K times per rule; "
                              "disagreement becomes confidence, and an "
                              "unagreed defect cannot kill (default 1)")
+        sp.add_argument("--vlm-strong", metavar="URL",
+                        help="stronger endpoint for the cascade: rules "
+                             "the first judge was unsure about are "
+                             "re-judged here, and only those")
+        sp.add_argument("--vlm-strong-model",
+                        help="model for --vlm-strong (default: "
+                             "--vlm-model)")
         sp.add_argument("--calibration", metavar="FILE",
                         help="calibration from `dailies calibrate`; "
                              "its conformal threshold replaces the "

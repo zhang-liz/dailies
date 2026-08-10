@@ -40,7 +40,8 @@ def shot_for(clip, override=None):
 
 def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
                 vlm_model="qwen3-vl", rubric_path=None, api_key=None,
-                samples=1, calibration=None):
+                samples=1, calibration=None, strong_endpoint=None,
+                strong_model=None):
     """Run the funnel on one clip and save its sidecar. Returns
     (take, cached): cached is True when the content hash matched an
     existing review and nothing was recomputed."""
@@ -67,6 +68,12 @@ def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
         rules = rubric_mod.load(rubric_path)
         r["vlm"] = vlm.screen(clip, t, rules, vlm_endpoint, vlm_model,
                               api_key=api_key, samples=samples)
+        if strong_endpoint and (r["vlm"].get("uncertain")
+                                or r["vlm"].get("unparsed")):
+            r["vlm"] = vlm.escalate(clip, t, rules, r["vlm"],
+                                    strong_endpoint,
+                                    strong_model or vlm_model,
+                                    api_key=api_key)
         if calibration is not None:
             # Calibrated mode: the conformal threshold replaces fail_at,
             # and the false-kill guarantee replaces judgment calls.
