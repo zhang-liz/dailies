@@ -22,7 +22,7 @@ One sidecar file per generated clip, named `<clip>.take.json`, next to the clip.
   },
   "review": {
     "mechanical": { "black_frames": [], "freeze": [], "scene_cuts": [], "flicker_score": 0.12, "motion_smoothness": 0.94, "candidate_frames": [0.0, 3.2], "kill_reasons": [] },
-    "vlm": { "engine": "qwen3-vl", "samples": 3, "defects": [ { "t": 3.2, "t_end": 4.1, "rule": "anatomy.hands", "severity": 3, "confidence": 0.67, "note": "left hand 6 fingers during cup grab" } ], "skipped": [], "unparsed": [], "uncertain": [], "escalated": [], "strong_engine": "big-vlm" },
+    "vlm": { "engine": "qwen3-vl", "samples": 3, "defects": [ { "t": 3.2, "t_end": 4.1, "rule": "anatomy.hands", "severity": 3, "confidence": 0.67, "note": "left hand 6 fingers during cup grab" } ], "skipped": [], "unparsed": [], "uncertain": [], "escalated": [], "strong_engine": "big-vlm", "usage": { "calls": 27, "prompt_tokens": 48210, "completion_tokens": 1930, "rules": { "anatomy.hands": { "calls": 3, "prompt_tokens": 5360, "completion_tokens": 214 } } }, "strong_usage": { "calls": 1, "prompt_tokens": 1790, "completion_tokens": 70, "rules": { "anatomy.hands": { "calls": 1, "prompt_tokens": 1790, "completion_tokens": 70 } } } },
     "verdict": "keep | kill | review",
     "rank_in_shot": 2
   },
@@ -40,6 +40,7 @@ One sidecar file per generated clip, named `<clip>.take.json`, next to the clip.
 - **A defect is one finding, not one frame.** Per-frame repeats of the same rule at contiguous timestamps merge into a single defect; `t_end` (optional) marks the span.
 - **Verdicts are honest.** `kill` requires stated reasons. Mechanical checks alone never produce `keep`; that requires eyes or a screening model.
 - **Severity is the rubric's, confidence is the sampler's.** Checklist rules fix each question's severity in the rubric; the judge only answers yes or no. `confidence` (optional) is the yes fraction across repeat samples; a defect below two-thirds agreement may not kill. `uncertain` lists rules whose samples split; `escalated` lists rules re-judged by a stronger model (`strong_engine`).
+- **Usage is measured, never estimated.** `vlm.usage` (optional) records what the judge actually consumed: request count and endpoint-reported prompt/completion tokens, total and per rule under `rules`. Tokens are zero when the endpoint reports no usage. `strong_usage` is the same record for the escalation model, kept separate because the two engines are priced differently.
 - **`gold` belongs to the human.** It records the verdict the user actually made (`pass` or `kill`), is written only by explicit labeling (`dailies gold add`), and is the calibration and regression substrate. Review tooling must never write or infer it.
 
 ## Status
