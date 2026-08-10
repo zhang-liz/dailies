@@ -1,77 +1,125 @@
 """Review rubrics: the extensibility story.
 
-A rubric is a set of named rules, each a prompt for the VLM plus an optional
-fail_at severity. Users add project-specific rules (a prop's continuity, a
-wardrobe color) with zero code. JSON always works; YAML works when PyYAML
-is installed, so the repo stays dependency-free.
+A rubric is a set of named rules. The default rules are checklists:
+yes/no evidence questions, each carrying the severity a yes implies.
+VLM judges answer binary questions far more consistently than they pick
+numbers on a scale (VisionReward, arXiv:2412.21059), so the model only
+says yes or no and where; severity stays in the rubric. Question text
+follows the published defect taxonomies (GeneVA artifact classes,
+VideoPhy-2 physics rules).
 
-Rules that need context from the recipe declare it with "needs" (dotted path
-into take.json, e.g. "recipe.prompt_text") and reference it in the prompt as
-{prompt}. Such rules are skipped for takes that lack the context.
+Legacy rules with a free "prompt" and model-chosen severity still work,
+so existing custom rubrics keep running. Users add project-specific
+rules (a prop's continuity, a wardrobe color) with zero code. JSON
+always works; YAML works when PyYAML is installed, so the repo stays
+dependency-free.
+
+Rules that need context from the recipe declare it with "needs" (dotted
+path into take.json, e.g. "recipe.prompt_text") and reference it as
+{prompt} in the prompt or in any question. Such rules are skipped for
+takes that lack the context.
 """
 
 import json
 
+
+def _q(ask, severity):
+    return {"ask": ask, "severity": severity}
+
+
 DEFAULT = {
     "anatomy.hands": {
-        "prompt": "Examine every visible hand. Count fingers, check joint "
-                  "bends and grips. Report frames where anatomy is wrong.",
+        "questions": [
+            _q("Does any visible hand have missing, extra, or fused "
+               "fingers?", 4),
+            _q("Does any hand bend at an impossible joint angle, or "
+               "merge into an object or body it touches?", 4),
+        ],
         "fail_at": 4,
     },
     "anatomy.faces": {
-        "prompt": "Examine every visible face for warped, melted, or "
-                  "asymmetric features, and eyes looking in impossible "
-                  "directions.",
-        "fail_at": 4,
-    },
-    "artifact.morphing": {
-        "prompt": "Look for objects or body parts that morph, dissolve, "
-                  "duplicate, or teleport between frames.",
+        "questions": [
+            _q("Is any visible face warped, melted, or asymmetric "
+               "beyond natural variation?", 4),
+            _q("Do any eyes look in impossible or mismatched "
+               "directions?", 3),
+        ],
         "fail_at": 4,
     },
     "anatomy.limbs": {
-        "prompt": "Check every visible body: number of arms and legs, "
-                  "joint bends, and poses. Report extra or missing limbs "
-                  "and impossible articulation.",
+        "questions": [
+            _q("Does any body have extra or missing arms or legs in "
+               "any frame?", 5),
+            _q("Does any limb bend at an impossible joint or pass "
+               "through a body?", 4),
+        ],
+        "fail_at": 4,
+    },
+    "artifact.morphing": {
+        "questions": [
+            _q("Does any object or body part morph, dissolve, or "
+               "duplicate between frames?", 4),
+            _q("Does any texture or pattern stay stuck in place on "
+               "screen while the surface it belongs to moves?", 3),
+        ],
         "fail_at": 4,
     },
     "physics.contact": {
-        "prompt": "Do held or contacted objects move rigidly with the hand "
-                  "or surface touching them? Report slipping, clipping, or "
-                  "floating contact.",
+        "questions": [
+            _q("Does any held or touched object slip, float, or clip "
+               "through the hand or surface in contact with it?", 4),
+            _q("Does any object rest or hang in the air without "
+               "support?", 4),
+        ],
         "fail_at": 4,
     },
     "physics.motion": {
-        "prompt": "Does movement obey gravity and momentum? Report objects "
-                  "or people that glide, accelerate impossibly, or move "
-                  "without a driving force.",
+        "questions": [
+            _q("Does anything move against gravity or momentum: "
+               "gliding, impossible acceleration, or motion with no "
+               "driving force?", 4),
+            _q("Does any object change size or amount without cause "
+               "between frames?", 4),
+        ],
         "fail_at": 4,
     },
     "continuity.objects": {
-        "prompt": "Count the important objects (props, items being "
-                  "handled) in each frame. Report objects that vanish or "
-                  "appear between frames without leaving or entering the "
-                  "frame naturally. An object that disappears entirely is "
-                  "severity 4 or 5.",
+        "questions": [
+            _q("Does any object vanish or appear between frames "
+               "without leaving or entering the frame naturally?", 4),
+            _q("Does the count of any important prop change between "
+               "frames?", 4),
+        ],
         "fail_at": 4,
     },
     "environment.stability": {
-        "prompt": "Watch the background and setting. Report walls, "
-                  "furniture, or scenery that melt, warp, or rearrange "
-                  "between frames.",
+        "questions": [
+            _q("Do walls, furniture, or scenery melt, warp, or "
+               "rearrange between frames?", 4),
+            _q("Is the background layout inconsistent between frames, "
+               "showing an impossible space?", 3),
+        ],
         "fail_at": 4,
     },
     "text.legibility": {
-        "prompt": "Find any text in the frames: signs, labels, screens, "
-                  "clothing. Report text that is garbled, misspelled, or "
-                  "changes between frames.",
+        "questions": [
+            _q("Is any prominent text (a sign, title, or label in "
+               "focus) garbled or misspelled?", 4),
+            _q("Does any background or incidental text look "
+               "garbled?", 3),
+            _q("Does any text change its content between frames?", 4),
+        ],
         "fail_at": 4,
     },
     "adherence.prompt": {
         "needs": "recipe.prompt_text",
-        "prompt": "The direction for this shot was: {prompt}\n"
-                  "Judge how well these frames follow it. Report each "
-                  "missed element as a defect, severity by importance.",
+        "questions": [
+            _q("The direction was: {prompt}\nIs any subject, object, "
+               "or setting the direction requires missing from the "
+               "frames?", 3),
+            _q("The direction was: {prompt}\nIs the required action or "
+               "camera move missing or wrong?", 3),
+        ],
         "fail_at": None,
     },
 }
@@ -95,8 +143,13 @@ def load(path=None):
             data = json.load(f)
     rules = data.get("rules", data)
     for name, rule in rules.items():
-        if "prompt" not in rule:
-            raise ValueError("rubric rule %r has no prompt" % name)
+        if "prompt" not in rule and not rule.get("questions"):
+            raise ValueError(
+                "rubric rule %r has no prompt and no questions" % name)
+        for q in rule.get("questions") or []:
+            if not q.get("ask"):
+                raise ValueError(
+                    "rubric rule %r has a question with no ask" % name)
     return rules
 
 

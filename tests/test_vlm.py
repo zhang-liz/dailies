@@ -19,8 +19,9 @@ FFMPEG = shutil.which("ffmpeg")
 
 
 class StubVlm(BaseHTTPRequestHandler):
-    """Answers every rule with one severity-5 hand defect, except
-    physics.contact, which passes."""
+    """Speaks both judge modes. Checklist rules get a yes on question 1
+    (except physics.contact, all no); legacy prompt rules get one
+    severity-5 defect (except physics.contact, which passes)."""
 
     requests = []
 
@@ -28,8 +29,17 @@ class StubVlm(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(
             int(self.headers["Content-Length"])))
         type(self).requests.append(body)
+        system = body["messages"][0]["content"]
         text = body["messages"][1]["content"][0]["text"]
-        if "physics.contact" in text:
+        if '"answers"' in system:
+            if "physics.contact" in text:
+                content = ('{"answers": [{"q": 1, "yes": false}, '
+                           '{"q": 2, "yes": false}]}')
+            else:
+                content = ('Sure:\n```json\n{"answers": [{"q": 1, '
+                           '"yes": true, "t": 0.5, "note": "six '
+                           'fingers"}, {"q": 2, "yes": "no"}]}\n```')
+        elif "physics.contact" in text:
             content = '{"defects": []}'
         else:
             content = ('Here you go:\n```json\n{"defects": [{"t": 0.5, '
@@ -102,6 +112,34 @@ class VlmTests(unittest.TestCase):
         count = len(StubVlm.requests)
         main(["review", self.clip, "--vlm", self.endpoint])
         self.assertEqual(len(StubVlm.requests), count)
+
+    def test_checklist_severity_comes_from_rubric_not_model(self):
+        main(["review", self.clip, "--vlm", self.endpoint])
+        r = take.load(self.clip)["review"]
+        hands = [d for d in r["vlm"]["defects"]
+                 if d["rule"] == "anatomy.hands"]
+        self.assertEqual(len(hands), 1)
+        # Stub said yes to question 1; the rubric's question 1 severity
+        # is 4, whatever the model might have preferred.
+        self.assertEqual(hands[0]["severity"], 4)
+
+    def test_answer_parser_tolerates_prose_and_strings(self):
+        answers = vlm._parse_answers(
+            'ok:\n{"answers": [{"q": 1, "yes": "Yes", "t": 2}, '
+            '{"q": "2", "yes": false}]}')
+        self.assertEqual(answers[0], {"q": 1, "yes": True, "t": 2.0,
+                                      "note": ""})
+        self.assertFalse(answers[1]["yes"])
+        self.assertIsNone(vlm._parse_answers("no json"))
+        self.assertIsNone(vlm._parse_answers('{"defects": []}'))
+
+    def test_unanswered_questions_are_a_pass(self):
+        defects = vlm._defects_from_answers(
+            [{"q": 1, "yes": True, "t": None, "note": ""},
+             {"q": 9, "yes": True, "t": 1.0, "note": "out of range"}],
+            [{"ask": "Extra fingers?", "severity": 5}], first_t=0.25)
+        self.assertEqual(defects, [{"t": 0.25, "severity": 5,
+                                    "note": "Extra fingers?"}])
 
     def test_defect_parser_tolerates_prose(self):
         self.assertEqual(

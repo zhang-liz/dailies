@@ -32,6 +32,18 @@ SYSTEM = (
     "passes this rule. Severity 5 is unusable, 1 is barely visible."
 )
 
+CHECKLIST_SYSTEM = (
+    "You are a strict QC inspector for AI-generated video. You are shown "
+    "frames sampled from one clip, each labeled with its timestamp in "
+    "seconds. Answer every numbered yes/no question strictly from what "
+    "is visible in the frames. Respond with JSON only, no prose: "
+    '{"answers": [{"q": <question number>, "yes": true|false, '
+    '"t": <timestamp of the clearest evidence>, "note": "<short '
+    'reason>"}]}. One entry per question. When the answer is no, t and '
+    "note may be omitted. Answer yes only when you can point at the "
+    "evidence in a specific frame."
+)
+
 
 class VlmError(RuntimeError):
     pass
@@ -105,6 +117,54 @@ def _parse_defects(text):
     return out
 
 
+def _parse_answers(text):
+    """Model output to a yes/no answer list. Tolerates code fences,
+    stray prose, and "yes"/"no" strings where booleans belong."""
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(0))
+    except ValueError:
+        return None
+    answers = data.get("answers")
+    if not isinstance(answers, list):
+        return None
+    out = []
+    for a in answers:
+        if not isinstance(a, dict):
+            continue
+        try:
+            q = int(a["q"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        yes = a.get("yes")
+        if not isinstance(yes, bool):
+            yes = str(yes).strip().lower() in ("yes", "true", "1")
+        try:
+            t = round(float(a["t"]), 3)
+        except (KeyError, TypeError, ValueError):
+            t = None
+        out.append({"q": q, "yes": yes, "t": t,
+                    "note": str(a.get("note", ""))[:300]})
+    return out
+
+
+def _defects_from_answers(answers, questions, first_t):
+    """Yes answers become defects. Severity comes from the rubric's
+    question, never from the model: the judge only says yes or no and
+    where."""
+    out = []
+    for a in answers:
+        if not a["yes"] or not 1 <= a["q"] <= len(questions):
+            continue
+        q = questions[a["q"] - 1]
+        out.append({"t": a["t"] if a["t"] is not None else first_t,
+                    "severity": max(1, min(5, int(q.get("severity", 3)))),
+                    "note": a["note"] or str(q["ask"]).split("\n")[-1][:200]})
+    return out
+
+
 MERGE_GAP = 0.8
 
 
@@ -151,16 +211,35 @@ def screen(clip, take, rules, endpoint, model, api_key=None):
         if context is None:
             result["skipped"].append(name)
             continue
-        prompt = rule["prompt"]
-        if context:
-            prompt = prompt.replace("{prompt}", str(context))
-        content = [{"type": "text",
-                    "text": "Rule %r: %s\n%s" % (name, prompt, stamps)}]
+        questions = rule.get("questions")
+        if questions:
+            lines = ["Rule %r. Answer every question from the frames."
+                     % name]
+            for i, q in enumerate(questions, 1):
+                ask = str(q["ask"])
+                if context:
+                    ask = ask.replace("{prompt}", str(context))
+                lines.append("%d. %s" % (i, ask))
+            system = CHECKLIST_SYSTEM
+            text = "%s\n%s" % ("\n".join(lines), stamps)
+        else:
+            prompt = rule["prompt"]
+            if context:
+                prompt = prompt.replace("{prompt}", str(context))
+            system = SYSTEM
+            text = "Rule %r: %s\n%s" % (name, prompt, stamps)
+        content = [{"type": "text", "text": text}]
         content.extend(images)
-        text = _request(endpoint, model, api_key, [
-            {"role": "system", "content": SYSTEM},
+        reply = _request(endpoint, model, api_key, [
+            {"role": "system", "content": system},
             {"role": "user", "content": content}])
-        defects = _parse_defects(text)
+        if questions:
+            answers = _parse_answers(reply)
+            defects = (None if answers is None else
+                       _defects_from_answers(answers, questions,
+                                             frames[0][0]))
+        else:
+            defects = _parse_defects(reply)
         if defects is None:
             result["unparsed"].append(name)
             continue
