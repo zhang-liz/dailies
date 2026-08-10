@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from dailies import ledger, regen, take, watch  # noqa: E402
+from dailies.cli import main  # noqa: E402
 from test_regen import write_bad_driver, write_driver  # noqa: E402
 
 FFMPEG = shutil.which("ffmpeg")
@@ -281,6 +282,25 @@ class FailureBlockTests(RegenBase):
         self.assertEqual(rgn.on_kill(t, clip, {clip: t})["action"],
                          "submitted")
         self.assertEqual(rgn.failures["shot-07"], 0)
+
+
+class CliUsageTests(unittest.TestCase):
+    # All three refuse before the loop starts, so main() returns.
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="dailies-watch-cli-")
+        self.addCleanup(shutil.rmtree, self.dir)
+
+    def test_dry_run_needs_regen(self):
+        self.assertEqual(main(["watch", self.dir, "--dry-run"]), 2)
+
+    def test_want_needs_regen(self):
+        self.assertEqual(main(["watch", self.dir, "--want",
+                               "shot-07=2"]), 2)
+
+    def test_malformed_want_exits_2(self):
+        self.assertEqual(main(["watch", self.dir, "--regen", "drv",
+                               "--want", "shot-07=zero"]), 2)
 
 
 class ReconcileOnStartTests(RegenBase):
