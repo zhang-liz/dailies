@@ -66,11 +66,22 @@ def review_clip(clip, shot=None, force=False, vlm_endpoint=None,
     if (vlm_endpoint and r["verdict"] != "kill"
             and (force or not r.get("vlm"))):
         rules = rubric_mod.load(rubric_path)
-        r["vlm"] = vlm.screen(clip, t, rules, vlm_endpoint, vlm_model,
-                              api_key=api_key, samples=samples)
+        judged, by_id = t, {}
+        if t.get("parent"):
+            # Intent guard: a chain's takes are judged against the root
+            # prompt, so a patched recipe cannot pass adherence by
+            # deleting the hard part of the direction.
+            from . import defense
+            by_id = defense.lineage_index(
+                os.path.dirname(os.path.abspath(clip)))
+            judged, _ = defense.intent_guard(t, by_id)
+        r["vlm"] = vlm.screen(clip, judged, rules, vlm_endpoint,
+                              vlm_model, api_key=api_key, samples=samples)
+        if judged is not t:
+            r["vlm"]["root_prompt"] = True
         if strong_endpoint and (r["vlm"].get("uncertain")
                                 or r["vlm"].get("unparsed")):
-            r["vlm"] = vlm.escalate(clip, t, rules, r["vlm"],
+            r["vlm"] = vlm.escalate(clip, judged, rules, r["vlm"],
                                     strong_endpoint,
                                     strong_model or vlm_model,
                                     api_key=api_key)
