@@ -50,16 +50,20 @@ def _usd(usage, rate):
 
 def block(take, prices):
     """The review.cost block for one take: judge spend from recorded
-    usage, generation spend from the flat per-clip price. A model with
-    usage but no price is named in unpriced_models, never silently
-    priced at zero."""
-    v = ((take.get("review") or {}).get("vlm")) or {}
+    usage, generation spend from the flat per-clip price. Scrutiny
+    re-judging bills like the first pass; its tokens are recorded in
+    the same shapes and count the same. A model with usage but no
+    price is named in unpriced_models, never silently priced at
+    zero."""
+    r = take.get("review") or {}
     models = prices.get("models") or {}
     vlm_usd = 0.0
     unpriced = set()
-    for engine, usage in ((v.get("engine"), v.get("usage")),
-                          (v.get("strong_engine"),
-                           v.get("strong_usage"))):
+    pairs = []
+    for v in (r.get("vlm") or {}, r.get("scrutiny") or {}):
+        pairs.append((v.get("engine"), v.get("usage")))
+        pairs.append((v.get("strong_engine"), v.get("strong_usage")))
+    for engine, usage in pairs:
         if not usage or not usage.get("calls"):
             continue
         rate = models.get(engine)
