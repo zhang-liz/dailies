@@ -4,6 +4,32 @@ Triage for AI-generated video takes. Batch-generate overnight, wake up to a rank
 
 Built so far: stage 1 of the funnel (mechanical, CPU only), stage 2 (VLM screening), and the morning report. Results live in per-clip sidecar files; the format is specified in [SPEC.md](SPEC.md) and is the contract for companion tooling (take lineage and recipe capture are a separate, upcoming tool).
 
+## One batch, sixty seconds
+
+Four takes from a current video model. The prompt requires a chalkboard sign reading exactly "HAPPY HOUR 5-7PM".
+
+![Four generated bar takes, each with a wrong chalkboard sign](docs/media/bar-batch.jpg)
+
+One command judges all four:
+
+```
+$ dailies review ./bar --vlm https://api.example.com/v1 \
+    --vlm-model gemini-3.5-flash-lite --samples 3
+reviewed 4 takes, killed 4
+  kill  #1  take-001.mp4
+        text.legibility severity 4 at 2.333s: The sign reads
+        'HAPPY HOUR 5-5PM' instead of 'HAPPY HOUR 5-7PM'
+  kill  #3  take-003.mp4
+        artifact.morphing severity 4 at 3.875s: The object being held
+        instantly morphs from a white egg into a black chalkboard sign
+```
+
+No take got the sign right: two read "7-5PM", two "5-5PM". With a price file the report opens with the batch's autopsy: `$0.22: no usable takes`. Tonight's fix is the prompt, not another 40 seeds, and it cost 22 cents to learn that instead of an hour of scrubbing.
+
+The same run on an easier batch killed a take at confidence 0.67 (two of three judge samples). We disagreed, recorded the ruling with `dailies gold add`, and `dailies fit` pushed that rule's weight negative: the judge learns whose taste is in charge.
+
+Full walkthrough with the clips and every output: [the tutorial](https://multimodalsociety.com/blog/overnight-dailies).
+
 ## Requirements
 
 Python 3.9+, ffmpeg and ffprobe on PATH. No Python dependencies; `blake3` is picked up if installed, otherwise hashes are `sha256:`-prefixed.
