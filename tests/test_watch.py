@@ -120,5 +120,88 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(len(self.events), 1)
 
 
+@unittest.skipUnless(FFMPEG, "ffmpeg not on PATH")
+class DoomedBreakerTests(unittest.TestCase):
+    # Lowered confidence so three mechanical kills trip the breaker;
+    # the default eight-kill trip is pinned in test_breaker.
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="dailies-doom-test-")
+        self.shot = os.path.join(self.dir, "shot-09")
+        os.makedirs(self.shot)
+        self.stop = threading.Event()
+        self.events = []
+        self.doomed = []
+        self.thread = threading.Thread(
+            target=watch.loop, args=(self.dir,),
+            kwargs={"interval": 0.2, "settle": 0.6, "stop": self.stop,
+                    "doom_confidence": 0.6,
+                    "emit": lambda t, c: self.events.append((t, c)),
+                    "on_doomed":
+                        lambda s, st: self.doomed.append((s, st))},
+            daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.stop.set()
+        self.thread.join(timeout=10)
+        shutil.rmtree(self.dir)
+
+    def test_kills_trip_breaker_once(self):
+        for i in range(3):
+            gen(os.path.join(self.shot, "dead-%d.mp4" % i),
+                "color=c=black:size=320x240:rate=8")
+        self.assertTrue(wait_for(lambda: len(self.doomed) == 1))
+        s, st = self.doomed[0]
+        self.assertEqual(s, "shot-09")
+        self.assertEqual(st["mechanical_kills"], 3)
+        self.assertTrue(st["doomed"])
+        self.assertTrue(st["worst"].endswith(".mp4"))
+        self.assertTrue(os.path.exists(take.sidecar_path(st["worst"])))
+        # The take that tripped it carries the ephemeral flag, and the
+        # flag never lands in the sidecar file.
+        self.assertTrue(wait_for(lambda: len(self.events) == 3))
+        self.assertTrue(self.events[-1][0]["_shot_doomed"])
+        self.assertNotIn("_shot_doomed", take.load(self.events[-1][1]))
+        # A fourth kill must not fire the hook again.
+        gen(os.path.join(self.shot, "dead-3.mp4"),
+            "color=c=black:size=320x240:rate=8")
+        self.assertTrue(wait_for(lambda: len(self.events) == 4))
+        self.assertEqual(len(self.doomed), 1)
+
+    def test_healthy_shot_not_flagged(self):
+        other = os.path.join(self.dir, "shot-10")
+        os.makedirs(other)
+        gen(os.path.join(other, "good.mp4"),
+            "testsrc2=size=320x240:rate=8")
+        self.assertTrue(wait_for(lambda: len(self.events) == 1))
+        self.assertFalse(self.events[0][0]["_shot_doomed"])
+        self.assertEqual(self.doomed, [])
+
+
+class HookTests(unittest.TestCase):
+    def test_hook_receives_shot_and_sidecar(self):
+        d = tempfile.mkdtemp(prefix="dailies-hook-test-")
+        try:
+            out = os.path.join(d, "out.txt")
+            script = os.path.join(d, "hook.py")
+            with open(script, "w") as f:
+                f.write("import sys\n"
+                        "open(%r, 'w').write('|'.join(sys.argv[1:]))\n"
+                        % out)
+            watch.run_hook('"%s" "%s"' % (sys.executable, script),
+                           "shot-07", "/takes/worst.mp4.take.json")
+            self.assertTrue(wait_for(
+                lambda: os.path.exists(out)
+                and "|" in open(out).read()))
+            self.assertEqual(open(out).read(),
+                             "shot-07|/takes/worst.mp4.take.json")
+        finally:
+            shutil.rmtree(d)
+
+    def test_bad_hook_does_not_raise(self):
+        watch.run_hook("/no/such/hook-binary", "shot-07", "x.take.json")
+
+
 if __name__ == "__main__":
     unittest.main()

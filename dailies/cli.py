@@ -354,6 +354,10 @@ def main(argv=None):
     vlm_flags(w)
     w.add_argument("--json", action="store_true",
                    help="emit one JSON line per reviewed take")
+    w.add_argument("--on-doomed", metavar="CMD",
+                   help="run CMD SHOT WORST_SIDECAR when a shot trips "
+                        "the doomed breaker; without it the flag is "
+                        "report-only")
     w.set_defaults(func=cmd_watch)
 
     args = p.parse_args(argv)
