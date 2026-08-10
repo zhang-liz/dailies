@@ -325,6 +325,59 @@ class RecordTests(unittest.TestCase):
         self.assertTrue(row["resolved"])
 
 
+class AdoptStubTests(unittest.TestCase):
+    # The crash window between driver submit and record_submit leaves
+    # the job id only in the stub sidecar; adoption files it as a
+    # pending row so reconcile() can settle it.
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="dailies-adopt-")
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.led = ledger.fresh()
+
+    def stub(self, name, regen_block, **fields):
+        t = {"take_id": None, "shot": "shot-07", "parent": "sha256:p",
+             "created": None, "output": {"file": name},
+             "recipe": {"seeds": {"3": 7}}, "review": None,
+             "regen": regen_block}
+        t.update(fields)
+        with open(os.path.join(self.dir, name + ".take.json"),
+                  "w") as f:
+            json.dump(t, f)
+        return t
+
+    def test_unrecorded_stub_becomes_a_pending_row(self):
+        self.stub("a-regen-01.mp4", {"driver": "drv", "job": "j-lost",
+                                     "submitted": "2026-08-09T00:00:00Z"})
+        self.assertEqual(ledger.adopt_stubs(self.led, self.dir),
+                         ["j-lost"])
+        row = self.led["jobs"]["j-lost"]
+        self.assertEqual(row["state"], "queued")
+        self.assertEqual(row["driver"], "drv")
+        self.assertEqual(row["clip"],
+                         os.path.join(self.dir, "a-regen-01.mp4"))
+        self.assertEqual((row["parent"], row["shot"], row["seeds"]),
+                         ("sha256:p", "shot-07", {"3": 7}))
+        self.assertEqual(self.led["attempts"], 1)
+
+    def test_recorded_and_regenless_stubs_left_alone(self):
+        self.stub("a-regen-01.mp4", {"driver": "drv", "job": "j1"})
+        self.stub("b-regen-02.mp4", None)
+        ledger.record_submit(self.led, "drv", "shot-07",
+                             {"job": "j1", "clip": "/x/a.mp4",
+                              "parent": "p", "recipe": None})
+        self.assertEqual(ledger.adopt_stubs(self.led, self.dir), [])
+        self.assertEqual(sorted(self.led["jobs"]), ["j1"])
+
+    def test_adopted_row_settles_through_reconcile(self):
+        self.stub("a-regen-01.mp4", {"driver": "drv", "job": "j-lost"})
+        open(os.path.join(self.dir, "a-regen-01.mp4"), "wb").close()
+        ledger.adopt_stubs(self.led, self.dir)
+        observed = ledger.reconcile(
+            self.led, poll=lambda d, j: {"state": "running"})
+        self.assertEqual(observed, {"j-lost": "done"})
+
+
 class ReconcileTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="dailies-reconcile-")

@@ -242,6 +242,45 @@ def record_result(ledger, job_id, state, error=None):
     return job
 
 
+def adopt_stubs(ledger, root):
+    """Adopt jobs the table never recorded: a crash between the driver
+    submit (which stamps the stub sidecar's regen.job) and record_submit
+    leaves the id only on disk, where reconcile() cannot see it. Walks
+    root for *.take.json stubs carrying a regen job id absent from the
+    job table and files each as a pending row for reconcile() to
+    settle. Returns the adopted job ids."""
+    adopted = []
+    for dirpath, _, files in os.walk(root):
+        for name in sorted(files):
+            if not name.endswith(".take.json"):
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                with open(path) as f:
+                    t = json.load(f)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(t, dict):
+                continue
+            reg = t.get("regen") or {}
+            jid = reg.get("job")
+            if not jid or jid in ledger["jobs"]:
+                continue
+            ledger["jobs"][jid] = {
+                "driver": reg.get("driver"),
+                "clip": path[:-len(".take.json")],
+                "parent": t.get("parent"),
+                "shot": t.get("shot"),
+                "seeds": (t.get("recipe") or {}).get("seeds"),
+                "submitted": reg.get("submitted"),
+                "state": "queued",
+                "adopted": _utcnow()}
+            adopted.append(jid)
+    if adopted:
+        ledger["attempts"] = len(ledger["jobs"])
+    return adopted
+
+
 def reconcile(ledger, poll=None):
     """Restart recovery over the pending jobs. The filesystem outranks
     the driver: a landed clip is done no matter what poll would say, and
