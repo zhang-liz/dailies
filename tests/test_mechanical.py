@@ -102,6 +102,16 @@ class MechanicalTests(unittest.TestCase):
         self.assertGreaterEqual(os.path.getmtime(
             take.sidecar_path(self.normal)), before)
 
+    def test_candidate_frames_cover_calm_stretches(self):
+        # One YDIF peak at the start; a 4 second calm tail must still
+        # send frames to the judge, at roughly the uniform interval.
+        series = [(i * 0.25, 100.0, 20.0 if i == 1 else 0.5)
+                  for i in range(17)]  # 0..4s
+        times = mechanical.candidate_frames(series)
+        calm = [t for t in times if t >= 1.0]
+        self.assertGreaterEqual(len(calm), 5)
+        self.assertLessEqual(len(times), mechanical.MAX_FRAMES)
+
     def test_motion_smoothness_ranks_jerky_below_smooth(self):
         jerky = os.path.join(self.shot, "jerky.mp4")
         subprocess.run(
