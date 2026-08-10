@@ -209,6 +209,22 @@ class SidecarSchemaTests(unittest.TestCase):
              "escalated": ["r.x"], "strong_engine": "big-vlm"})
         self.assertEqual(errors(self.schema, t), [])
 
+    def test_regen_stub_validates(self):
+        # The stub a driver submission pre-writes: provenance without a
+        # review, take_id unknown until the clip lands.
+        t = {"take_id": None, "shot": "shot-07",
+             "parent": "sha256:%064x" % 1,
+             "created": "2026-08-10T02:14:00Z",
+             "output": {"file": "take-031-regen-9b1de6a2.mp4"},
+             "recipe": {"seeds": {"3": 918273645}}, "review": None,
+             "regen": {"driver": "comfy-driver", "job": "9b1de6",
+                       "submitted": "2026-08-10T02:14:00Z"}}
+        self.assertEqual(errors(self.schema, t), [])
+        t["regen"] = {"driver": "comfy-driver"}  # job id is required
+        self.assertTrue(errors(self.schema, t))
+        t["regen"] = {"job": 3}
+        self.assertTrue(errors(self.schema, t))
+
     def test_unknown_keys_are_tolerated(self):
         # SPEC law: unknown keys are preserved, so the schema must not
         # reject a sidecar carrying another tool's block.
