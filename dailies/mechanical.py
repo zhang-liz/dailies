@@ -172,6 +172,29 @@ def flicker_score(series):
     return round(statistics.mean(diffs) / 255.0, 4)
 
 
+SMOOTHNESS_WIDTH = 256
+
+
+def motion_smoothness(path, fps):
+    """Interpolation-reconstruction smoothness, 0..1, higher is smoother.
+
+    VBench's motion-smoothness construct with ffmpeg's minterpolate
+    standing in for the learned interpolator: drop the odd frames,
+    re-invent them from the evens, SSIM the reconstruction against the
+    original. Smooth plausible motion reconstructs well; jerky or
+    rubber-band motion does not. None when fps is unknown or ffmpeg
+    cannot compute it."""
+    if not fps or fps <= 0:
+        return None
+    graph = ("[0:v]scale=%d:-2,split[a][b];"
+             "[a]select='not(mod(n\\,2))',minterpolate=fps=%s[rec];"
+             "[rec][b]ssim" % (SMOOTHNESS_WIDTH, fps))
+    r = _run(["ffmpeg", "-v", "info", "-i", path,
+              "-filter_complex", graph, "-an", "-f", "null", "-"])
+    m = re.search(r"SSIM.*All:([\d.]+)", r.stderr)
+    return round(float(m.group(1)), 4) if m else None
+
+
 def candidate_frames(series, n=CANDIDATE_FRAMES):
     """Timestamps for the VLM stage: YDIF peaks plus the first frame."""
     if not series:
@@ -192,6 +215,7 @@ def review(path):
             "freeze": [],
             "scene_cuts": [],
             "flicker_score": None,
+            "motion_smoothness": None,
             "candidate_frames": [],
             "kill_reasons": [],
         },
@@ -212,6 +236,7 @@ def review(path):
     series = luma_series(path)
     mech["flicker_score"] = flicker_score(series)
     mech["scene_cuts"] = scene_cuts(path)
+    mech["motion_smoothness"] = motion_smoothness(path, info["fps"])
     mech["candidate_frames"] = candidate_frames(series)
 
     if duration > 0:

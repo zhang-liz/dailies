@@ -202,6 +202,8 @@ def _take_card(t, report_dir):
         stats.append("%s frames" % out["frames"])
     if mech.get("flicker_score") is not None:
         stats.append("flicker %.3f" % mech["flicker_score"])
+    if mech.get("motion_smoothness") is not None:
+        stats.append("motion %.3f" % mech["motion_smoothness"])
     if mech.get("scene_cuts"):
         stats.append("%d cuts" % len(mech["scene_cuts"]))
     defects = (r.get("vlm") or {}).get("defects") or []

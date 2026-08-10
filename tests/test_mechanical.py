@@ -102,6 +102,21 @@ class MechanicalTests(unittest.TestCase):
         self.assertGreaterEqual(os.path.getmtime(
             take.sidecar_path(self.normal)), before)
 
+    def test_motion_smoothness_ranks_jerky_below_smooth(self):
+        jerky = os.path.join(self.shot, "jerky.mp4")
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-i", self.normal,
+             "-vf", "shuffleframes=4 3 2 1 0", "-pix_fmt", "yuv420p",
+             jerky], check=True)
+        self.addCleanup(os.unlink, jerky)
+        smooth_score = mechanical.motion_smoothness(self.normal, 12)
+        jerky_score = mechanical.motion_smoothness(jerky, 12)
+        self.assertIsNotNone(smooth_score)
+        self.assertGreater(smooth_score, jerky_score)
+
+    def test_motion_smoothness_none_without_fps(self):
+        self.assertIsNone(mechanical.motion_smoothness(self.normal, None))
+
     def test_flicker_masks_genuine_motion(self):
         # Mostly static clip with one burst of fast action: the luma
         # jumps during the burst are motion, not flicker.
